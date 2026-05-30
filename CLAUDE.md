@@ -22,8 +22,10 @@ Run: `python -m http.server 8123 --directory spike-collab` → open `http://loca
 - **Reader sign-off verdict** (Approve / Request changes / Block) — the alignment north-star signal.
 - Mock identity: Reader=Alex, Author=Nirat. Decisions/rationale: `docs/comment-lifecycle-research.md`.
 
-### `spike/` — conversion-fidelity (PARKED, plan-mod #3) — Node/TS
-Conversion doc→IR→HTML + eval harness (doc-agnostic). Deterministic parts verified; LLM eval (`npm run eval`) needs a provider key (`LLM_PROVIDER` + key — provider abstracted, see `spike/src/client.ts`). Parked because owner judged conversion a commodity; revisit only if author correction proves expensive.
+### `spike/` — conversion (Node/TS) — `convert` VERIFIED, full eval PARKED
+Conversion doc→IR→HTML + eval harness (doc-agnostic). **`npm run convert -- <doc>` verified end-to-end (2026-05-30):** converted the DentalTechHub JTBD doc → clean artifact, **correctly surfaced the buried lede** (Part-8 "Steps 4–8" conclusion lifted to the top), passed the structural/safety contract. Output not committed (`spike/out/` gitignored).
+- **Key:** copy `spike/.env.example` → `spike/.env` (gitignored), fill `ANTHROPIC_API_KEY` or the OpenAI-compatible block. Loaded by `run.ts`. Provider abstracted in `spike/src/client.ts`.
+- **Full fidelity eval (`npm run eval`: judge + scores + gate over a 5–10 doc golden set) is PARKED** (plan-mod #3: conversion judged a commodity). Run it only if output quality later comes into doubt; don't build out the golden set otherwise.
 
 ### Candidate next steps (none started)
 - Wire conversion (`spike/`) output INTO the collab review surface (`spike-collab/`) — end-to-end loop.

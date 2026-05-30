@@ -1,4 +1,5 @@
 import { writeFile, mkdir } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, basename, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseToIR } from "./parse.ts";
@@ -9,6 +10,17 @@ import { providerInfo } from "./client.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const OUT_DIR = join(ROOT, "out");
+
+// Load spike/.env (gitignored) into process.env. Drop your API key there once;
+// no need to re-export it each shell session. Client reads keys lazily at call time.
+const envPath = join(ROOT, ".env");
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    if (line.trimStart().startsWith("#")) continue;
+    const m = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+}
 
 const [cmd, arg] = process.argv.slice(2);
 

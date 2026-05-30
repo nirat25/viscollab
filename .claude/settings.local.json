@@ -13,7 +13,11 @@
       "WebFetch(domain:helpx.adobe.com)",
       "Bash(git --version)",
       "Bash(gh auth *)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(git remote *)",
+      "Bash(GIT_TERMINAL_PROMPT=0 timeout 120 git push -u origin main)",
+      "Bash(timeout 60 npm run convert -- fixtures/sample-decision.md)",
+      "Bash(rtk wc *)"
     ]
   }
 }

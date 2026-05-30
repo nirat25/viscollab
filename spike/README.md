@@ -12,11 +12,18 @@ the doc + renders per the `RENDER_SPEC` principles) → **structural+safety vali
 (deterministic, doc-agnostic) → **LLM-as-judge** fidelity scoring (`judge.ts`, `rubric.ts`)
 → results in `results/`.
 
+## Status (2026-05-30)
+`npm run convert` **verified end-to-end** — converted the DentalTechHub JTBD doc into a clean
+artifact and **surfaced the buried lede** (Part-8 "Steps 4–8" conclusion lifted to the top);
+output passes the structural/safety contract. Full eval (`npm run eval`: judge + scores + gate)
+is **parked** (plan-mod #3 — conversion judged a commodity).
+
 ## Run
 ```
 npm install
+cp .env.example .env      # then fill ANTHROPIC_API_KEY (or the OpenAI block); .env is gitignored
 
-# --- pick a provider (cheap now, Anthropic later) ---
+# --- or set inline per session instead of .env ---
 # OpenAI-compatible (OpenAI, OpenRouter, DeepSeek, Groq, Together, Ollama):
 $env:LLM_PROVIDER  = "openai"
 $env:OPENAI_API_KEY = "..."

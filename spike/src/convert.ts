@@ -41,7 +41,7 @@ Output the HTML fragment now.`;
     role: "convert",
     system: SYSTEM,
     user,
-    maxTokens: 8192,
+    maxTokens: 16384, // large docs (e.g. the 25-section golden doc) overflow 8k
   });
 
   return { html: stripFences(html), promptVersion: PROMPT_VERSION, model: getModel("convert") };

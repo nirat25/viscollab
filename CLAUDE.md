@@ -20,6 +20,7 @@ Run: `python -m http.server 8123 --directory spike-collab` → open `http://loca
 - Lifecycle: resolve/reopen, per-comment **history**, filter tabs, **manual re-attach**, **"Addressed (content edited)"** before/after change-link (no incumbent has this).
 - **Threads** (replies) + **@mentions** (autocomplete, parsed/highlighted) + **notification record** + per-user 🔔 bell.
 - **Reader sign-off verdict** (Approve / Request changes / Block) — the alignment north-star signal.
+- **Load artifact** — the two halves are wired: "Load artifact" button injects a converted `spike/out/*.html` into the review surface (resets review state for the new doc, persists across reload). Verified end-to-end: real converted DentalTechHub artifact loaded, text + element anchoring work on it.
 - Mock identity: Reader=Alex, Author=Nirat. Decisions/rationale: `docs/comment-lifecycle-research.md`.
 
 ### `spike/` — conversion (Node/TS) — `convert` VERIFIED, full eval PARKED
@@ -28,9 +29,10 @@ Conversion doc→IR→HTML + eval harness (doc-agnostic). **`npm run convert -- 
 - **Full fidelity eval (`npm run eval`: judge + scores + gate over a 5–10 doc golden set) is PARKED** (plan-mod #3: conversion judged a commodity). Run it only if output quality later comes into doubt; don't build out the golden set otherwise.
 
 ### Candidate next steps (none started)
-- Wire conversion (`spike/`) output INTO the collab review surface (`spike-collab/`) — end-to-end loop.
+- **Design profiles in conversion** — inject composable design guidance (Tufte / exec-brief / dense-table…) into the convert system prompt (`spike/src/convert.ts` SYSTEM + `template.ts` RENDER_SPEC). Auto-pick or select per doc/section. No skill mechanism needed now (it's a system prompt); skills become worthwhile only when the guidance library is large enough that on-demand loading saves tokens. Progressive disclosure already happens regardless.
 - Decide the real stack/architecture (PRD `P1-T3` ADR) off these spike learnings, then start the actual MVP build (Phase 2) — both spikes are throwaway-grade.
 - Remaining P2-T4 polish: orphan re-attach merge UX, fuzzy for longer spans (diff-match-patch), real identity/persistence.
+- *(Done this session: end-to-end loop wired — convert → load into review surface.)*
 
 ## Hard anti-scope (PRD §7, Part 4) — never reintroduce
 - ❌ Replacement for Word / Google Docs (we **complement**)

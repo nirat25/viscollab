@@ -38,6 +38,12 @@ demonstrate cross-user mentions; self-mentions are suppressed.
 **Reader sign-off (alignment north-star):** per-reader verdict in the rail — Approve / Request
 changes / Block — with an all-members roster. The actual sign-off signal the product exists to capture.
 
+**Load artifact (end-to-end loop):** the **Load artifact** button injects a converted
+`spike/out/*.html` into the review surface — so the whole thesis runs on one screen
+(upload doc → convert → review/feedback/sign-off on the artifact). Loading resets review state
+for the new document; persists across reload. Verified: real converted artifact loaded, text +
+element anchoring work on it. (Delete comments: per-comment **Delete** + **Clear resolved**.)
+
 **Differentiators built in:**
 - **Manual re-attach** — click Re-attach on a stale/orphaned comment, select new text, it rebinds.
 - **"Addressed (content edited)"** — on resolve, if the anchored text changed, the resolution

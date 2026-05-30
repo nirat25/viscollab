@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Collaboration spike — lifecycle + element feedback + threads/@mentions</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --accent:#2f6feb; --stale:#c2410c; --orphan:#b91c1c; --ok:#166534; --bg:#fafafa; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:6; flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0; font-weight:600; }
+  .role { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--muted); }
+  button { font:inherit; padding:5px 11px; border:1px solid var(--line); background:#fff; border-radius:7px; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .mini { padding:3px 8px; font-size:12px; }
+  .bell { position:relative; }
+  .bell .dot { position:absolute; top:-6px; right:-6px; background:var(--orphan); color:#fff; font-size:10px; font-weight:700; border-radius:99px; padding:1px 5px; }
+  .wrap { display:grid; grid-template-columns: 1fr 380px; }
+  main { padding:28px 36px; background:#fff; min-height:calc(100vh - 49px); border-right:1px solid var(--line); }
+  #artifact[contenteditable="true"] { outline:2px dashed var(--accent); outline-offset:10px; border-radius:4px; }
+  #artifact.picking { cursor:crosshair; }
+  #artifact h2 { font-size:20px; margin:26px 0 8px; }
+  #artifact .lead { font-size:17px; background:#f4f7ff; border-left:3px solid var(--accent); padding:12px 16px; border-radius:4px; }
+  #artifact details { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:8px 0; }
+  #artifact summary { cursor:pointer; font-weight:600; }
+  #artifact table { border-collapse:collapse; margin:10px 0; width:100%; }
+  #artifact th,#artifact td { border:1px solid var(--line); padding:6px 9px; text-align:left; font-size:14px; }
+  .anno-el { outline:2px solid #c7d2fe; outline-offset:2px; border-radius:3px; }
+  .anno-active { outline:2px solid var(--accent) !important; outline-offset:2px; }
+  aside { padding:16px; position:sticky; top:49px; max-height:calc(100vh - 49px); overflow:auto; }
+  aside h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:4px 0 10px; }
+  .filters { display:flex; gap:6px; margin-bottom:12px; }
+  .filters button { font-size:12px; padding:4px 9px; }
+  .cmt { border:1px solid var(--line); border-radius:9px; padding:10px 12px; margin-bottom:10px; background:#fff; }
+  .cmt .q { font-size:12px; color:var(--muted); border-left:2px solid var(--line); padding-left:8px; margin:0 0 6px; font-style:italic; cursor:pointer; }
+  .cmt .body { margin:0 0 6px; }
+  .cmt.resolved { opacity:.74; background:#f6f6f6; }
+  .badges { display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap; align-items:center; }
+  .badge { display:inline-block; font-size:11px; font-weight:600; padding:1px 7px; border-radius:99px; }
+  .b-open { background:#dbeafe; color:#1e40af; } .b-resolved { background:#dcfce7; color:var(--ok); }
+  .b-anchored { background:#eef2ff; color:#3730a3; } .b-stale { background:#ffedd5; color:var(--stale); }
+  .b-orphaned { background:#fee2e2; color:var(--orphan); }
+  .b-approve { background:#dcfce7; color:var(--ok); } .b-flag { background:#fee2e2; color:var(--orphan); }
+  .b-needs { background:#fef9c3; color:#854d0e; } .b-question { background:#e0e7ff; color:#3730a3; }
+  .actions { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .resnote { font-size:12px; margin:6px 0 0; padding:6px 8px; border-radius:6px; background:#f0fdf4; color:var(--ok); }
+  .resnote.edited { background:#fff7ed; color:var(--stale); }
+  .resnote .ba { display:block; color:var(--muted); margin-top:3px; }
+  .lkc { font-size:12px; color:var(--orphan); margin:4px 0 0; }
+  .mention { color:var(--accent); font-weight:600; }
+  .replies { margin:8px 0 0; border-left:2px solid var(--line); padding-left:10px; }
+  .reply { font-size:13.5px; margin-bottom:7px; }
+  .reply .who { font-weight:600; font-size:12px; }
+  .reply .rt { color:var(--muted); font-size:11px; }
+  .composer { margin-top:8px; display:none; position:relative; }
+  .composer textarea { width:100%; height:46px; border:1px solid var(--line); border-radius:7px; padding:6px; font:inherit; resize:none; }
+  .composer .row { display:flex; justify-content:flex-end; gap:6px; margin-top:5px; }
+  .hist { margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; }
+  .hist .ev { font-size:11px; color:var(--muted); }
+  .meta { font-size:11px; color:var(--muted); margin-top:6px; }
+  .empty { color:var(--muted); font-size:13px; }
+  #signoff { border:1px solid var(--line); border-radius:9px; padding:10px 12px; margin-bottom:12px; background:#fff; }
+  .so-title { font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; }
+  .so-btns { display:flex; gap:6px; margin-bottom:6px; }
+  .so-btns button { flex:1; font-size:12px; padding:5px 4px; }
+  .so-btns button[data-k="approve"][aria-pressed="true"]{ background:var(--ok); border-color:var(--ok); color:#fff; }
+  .so-btns button[data-k="changes"][aria-pressed="true"]{ background:var(--stale); border-color:var(--stale); color:#fff; }
+  .so-btns button[data-k="block"][aria-pressed="true"]{ background:var(--orphan); border-color:var(--orphan); color:#fff; }
+  .so-roster { font-size:11px; color:var(--muted); }
+  ::highlight(cmt-all) { background:#fef3c7; }
+  ::highlight(cmt-active) { background:#fde68a; }
+  ::highlight(cmt-stale) { background:#fed7aa; text-decoration: underline wavy var(--stale); }
+  .pop { position:absolute; z-index:10; display:none; background:#111; color:#fff; border-radius:8px; padding:8px; box-shadow:0 6px 24px rgba(0,0,0,.25); width:280px; }
+  .pop textarea { width:100%; height:50px; border-radius:6px; border:none; padding:6px; font:inherit; resize:none; }
+  .pop .row { display:flex; justify-content:flex-end; gap:6px; margin-top:6px; }
+  .pop button { background:#333; color:#fff; border:none; }
+  .pop button.go { background:var(--accent); }
+  .fbtypes { display:flex; gap:5px; margin-bottom:7px; }
+  .fbtypes button { flex:1; padding:5px 4px; font-size:12px; }
+  .fbtypes button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); }
+  #pickbox { position:absolute; z-index:9; pointer-events:none; border:2px solid var(--accent); background:rgba(47,111,235,.08); border-radius:4px; display:none; }
+  #mentionbox { position:absolute; z-index:20; display:none; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.18); min-width:140px; overflow:hidden; }
+  #mentionbox div { padding:6px 10px; cursor:pointer; font-size:13px; }
+  #mentionbox div[aria-selected="true"], #mentionbox div:hover { background:#eef2ff; }
+  #notif { position:absolute; top:46px; right:16px; z-index:20; width:320px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.18); display:none; }
+  #notif h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0; padding:10px 12px; border-bottom:1px solid var(--line); }
+  .notif-item { padding:9px 12px; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer; }
+  .notif-item.unread { background:#f4f7ff; }
+  .notif-item .ni-meta { color:var(--muted); font-size:11px; margin-top:2px; }
+  .status { font-size:12px; color:var(--muted); margin-left:auto; max-width:36ch; text-align:right; }
+  .status.act { color:var(--accent); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Collaboration spike</h1>
+  <div class="role">
+    you:
+    <button id="roleReader" aria-pressed="true">Reader (Alex)</button>
+    <button id="roleAuthor" aria-pressed="false">Author (Nirat)</button>
+  </div>
+  <button id="pickToggle" aria-pressed="false">Comment on element</button>
+  <button id="editToggle" aria-pressed="false" disabled>Edit mode</button>
+  <button id="bell" class="bell">🔔<span class="dot" id="bellDot" style="display:none">0</span></button>
+  <button id="reset" title="clear stored comments">Reset</button>
+  <span class="status" id="status">Reader: select text, or click “Comment on element”. Use @ to mention.</span>
+</header>
+
+<div class="wrap">
+  <main>
+    <div id="artifact">
+      <p class="lead" id="lead">Recommendation: consolidate the three analytics vendors onto <b>Vendor A</b> this quarter — it cuts cost ~46% with the lowest migration effort and covers every current use case.</p>
+      <h2 id="why">Why now</h2>
+      <p>All three contracts renew in Q3. Acting before renewal avoids auto-renewal lock-in and gives a clean migration window. Waiting another cycle compounds the overlap cost and the maintenance burden of three integrations.</p>
+      <h2 id="options">Options considered</h2>
+      <table id="opt-table">
+        <tr><th>Option</th><th>Annual cost</th><th>Migration effort</th></tr>
+        <tr><td>Status quo (keep all three)</td><td>$240k</td><td>none</td></tr>
+        <tr><td>Consolidate to Vendor A</td><td>$130k</td><td>3 weeks</td></tr>
+        <tr><td>Consolidate to Vendor B</td><td>$110k</td><td>6 weeks</td></tr>
+      </table>
+      <h2 id="criteria">Success criteria</h2>
+      <details open>
+        <summary>What approval commits us to</summary>
+        <ul>
+          <li>Single source of truth for analytics within one quarter</li>
+          <li>No loss of existing dashboards during cutover</li>
+          <li>Net annual saving above $100k</li>
+        </ul>
+      </details>
+      <h2 id="risks">Risks</h2>
+      <details>
+        <summary>Migration risk detail</summary>
+        <p>Primary risk is a short reporting outage during cutover. Mitigation: run both pipelines in parallel for one week and reconcile before cutting the old vendors.</p>
+      </details>
+    </div>
+  </main>
+
+  <aside>
+    <h2>Comments (<span id="count">0</span>)</h2>
+    <div id="signoff"></div>
+    <div class="filters">
+      <button data-filter="open" aria-pressed="true">Open</button>
+      <button data-filter="resolved" aria-pressed="false">Resolved</button>
+      <button data-filter="attention" aria-pressed="false">Needs re-anchoring</button>
+      <button id="clearResolved" class="mini" title="delete all resolved comments">Clear resolved</button>
+    </div>
+    <div id="list"></div>
+  </aside>
+</div>
+
+<div id="pickbox"></div>
+<div id="mentionbox"></div>
+<div id="notif"><h3>Notifications</h3><div id="notifList"></div></div>
+
+<div id="pop" class="pop"><textarea id="popText" placeholder="Comment… use @ to mention"></textarea><div class="row"><button id="popCancel">Cancel</button><button id="popSave" class="go">Comment</button></div></div>
+<div id="epop" class="pop">
+  <div class="fbtypes">
+    <button data-fb="approve">✓ Approve</button><button data-fb="flag">⚑ Flag</button>
+    <button data-fb="needs">▦ Needs data</button><button data-fb="question">? Question</button>
+  </div>
+  <textarea id="epopText" placeholder="Optional note… use @ to mention"></textarea>
+  <div class="row"><button id="epopCancel">Cancel</button><button id="epopSave" class="go">Add feedback</button></div>
+</div>
+
+<script>
+/* ───────────────────────────────────────────────────────────────────────────
+   Adds to the lifecycle + element-feedback model: THREADED REPLIES, @MENTIONS,
+   and a NOTIFICATION RECORD (PRD P2-T4: "threaded replies; @mentions ... an
+   @mention writes a notification record"). Mentions are parsed from any body
+   (root comment, element note, or reply), highlighted, and each writes a
+   notification {to, by, commentId, replyId, snippet, read}.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+const art = document.getElementById('artifact');
+const PREFIX_LEN = 32, STALE_WINDOW = 400, FUZZY_THRESHOLD = 0.6, STORE_KEY = 'collab-spike-v4', NOTIF_KEY = 'collab-spike-v4-notif', VKEY = 'collab-spike-v4-verdict';
+const SIGNOFF = [{k:'approve',l:'Approve'},{k:'changes',l:'Request changes'},{k:'block',l:'Block'}];
+const FB = { approve:{label:'Approve',cls:'b-approve'}, flag:{label:'Flag',cls:'b-flag'}, needs:{label:'Needs data',cls:'b-needs'}, question:{label:'Question',cls:'b-question'} };
+const MEMBERS = [{id:'nirat',name:'Nirat'},{id:'alex',name:'Alex'},{id:'priya',name:'Priya'},{id:'sam',name:'Sam'}];
+const ME = { reader:'Alex', author:'Nirat' };  // current display name by role
+
+let comments = load();
+let notifications = loadNotif();
+let verdicts = loadVerdicts();   // { "Alex":"changes", "Nirat":"approve" } — per-reader sign-off
+let role='reader', editing=false, filter='open', reattachId=null;
+let picking=false, hoverEl=null;
+
+/* ---- text-offset model ---- */
+function textNodes(root){ const o=[],w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let n; while((n=w.nextNode()))o.push(n); return o; }
+function fullText(root){ return textNodes(root).map(n=>n.nodeValue).join(''); }
+function offsetOf(root,node,off){ let a=0; for(const t of textNodes(root)){ if(t===node) return a+off; a+=t.nodeValue.length; } return a; }
+function rangeFromOffsets(root,start,end){ const nodes=textNodes(root); let a=0,r=document.createRange(),set=false;
+  for(const t of nodes){ const len=t.nodeValue.length; if(!set&&start<=a+len){ r.setStart(t,start-a); set=true; } if(set&&end<=a+len){ r.setEnd(t,end-a); return r; } a+=len; } return null; }
+
+/* ---- fuzzy match (Sørensen–Dice on char bigrams) — last-resort re-anchor tier ---- */
+function bigrams(s){ const m=new Map(); for(let i=0;i<s.length-1;i++){ const g=s.substr(i,2); m.set(g,(m.get(g)||0)+1); } return m; }
+function dice(a,b){ if(a===b) return 1; if(a.length<2||b.length<2) return 0; const A=bigrams(a),B=bigrams(b); let inter=0; for(const [g,n] of A){ if(B.has(g)) inter+=Math.min(n,B.get(g)); } return 2*inter/((a.length-1)+(b.length-1)); }
+function fuzzyFind(text,quote,hintIdx){ const q=quote.toLowerCase(), qlen=quote.length, lt=text.toLowerCase();
+  let best=-1,bestScore=0; const step=Math.max(1,Math.floor(qlen/8));
+  for(let i=0;i<=Math.max(0,text.length-Math.min(qlen,text.length));i+=step){ let sc=dice(q,lt.substr(i,qlen));
+    if(hintIdx>=0) sc-=Math.min(0.08,Math.abs(i-hintIdx)/text.length*0.08); // slight bias toward last-known location
+    if(sc>bestScore){ bestScore=sc; best=i; } }
+  return { index:best, score:bestScore }; }
+
+/* ---- element anchoring ---- */
+function normText(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+function elHash(el){ let s=normText(el.textContent), h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return h; }
+function elPath(el,root){ const seg=[]; while(el&&el!==root&&el.parentElement){ const tag=el.tagName.toLowerCase(); let i=1,sib=el; while((sib=sib.previousElementSibling)) if(sib.tagName.toLowerCase()===tag) i++; seg.unshift(tag+':nth-of-type('+i+')'); el=el.parentElement; } return seg.join('>'); }
+function byPath(root,path){ let el=root; if(!path) return null; for(const seg of path.split('>')){ const m=/^(\w+):nth-of-type\((\d+)\)$/.exec(seg); if(!m) return null; const tag=m[1],n=+m[2]; let c=0,found=null; for(const ch of el.children){ if(ch.tagName.toLowerCase()===tag){ c++; if(c===n){found=ch;break;} } } if(!found) return null; el=found; } return el===root?null:el; }
+function snippetOf(el){ return normText(el.textContent).slice(0,60); }
+function makeElTarget(el){ return { type:'element', id:el.id||'', path:elPath(el,art), hash:elHash(el), tag:el.tagName.toLowerCase(), snippet:snippetOf(el) }; }
+
+/* ---- unified re-anchor ---- */
+function locate(root,c){
+  const t=c.target;
+  if(t.type==='element'){ let e=null;
+    if(t.id) e=root.querySelector('#'+(window.CSS&&CSS.escape?CSS.escape(t.id):t.id));
+    if(!e) e=byPath(root,t.path);
+    if(!e && t.hash!=null){ for(const x of root.querySelectorAll('*')){ if(elHash(x)===t.hash){ e=x; break; } } }
+    if(!e) return {status:'orphaned'};
+    return { status: elHash(e)===t.hash ? 'anchored':'stale', el:e, newSnippet:snippetOf(e) }; }
+  const text=fullText(root), q=t.quote, pre=t.prefix, suf=t.suffix;
+  if(!q) return {status:'orphaned'};
+  const hits=[]; let i=text.indexOf(q); while(i!==-1){ hits.push(i); i=text.indexOf(q,i+1); }
+  if(hits.length===1) return {status:'anchored',start:hits[0],end:hits[0]+q.length};
+  if(hits.length>1){ let best=hits[0],bs=-1; for(const h of hits){ const p=text.slice(Math.max(0,h-pre.length),h),s=text.slice(h+q.length,h+q.length+suf.length); const sc=(p.endsWith(pre)?pre.length:0)+(s.startsWith(suf)?suf.length:0); if(sc>bs){bs=sc;best=h;} } return {status:'anchored',start:best,end:best+q.length}; }
+  if(pre&&suf){ const pi=text.indexOf(pre); if(pi!==-1){ const ap=pi+pre.length, si=text.indexOf(suf,ap); if(si!==-1&&si-ap<=STALE_WINDOW) return {status:'stale',start:ap,end:si,newText:text.slice(ap,si)}; } }
+  // fuzzy tier: quote edited in place AND its context shifted. Re-anchor to the best approximate
+  // match; below threshold -> orphan (never silently bind to possibly-wrong text).
+  const hint=pre?text.indexOf(pre):-1; const f=fuzzyFind(text,q,hint>=0?hint+pre.length:-1);
+  if(f.score>=FUZZY_THRESHOLD){ const end=Math.min(text.length,f.index+q.length); return {status:'stale',start:f.index,end,newText:text.slice(f.index,end),fuzzy:+f.score.toFixed(2)}; }
+  return {status:'orphaned'};
+}
+
+/* ---- @mentions ---- */
+function parseMentions(text){ const out=new Set(); const re=/@(\w+)/g; let m; while((m=re.exec(text||''))){ const tok=m[1].toLowerCase(); const mem=MEMBERS.find(x=>x.id===tok||x.name.toLowerCase()===tok); if(mem) out.add(mem.id); } return [...out]; }
+function renderBody(text){ return esc(text).replace(/@(\w+)/g,(full,tok)=>{ const mem=MEMBERS.find(x=>x.id===tok.toLowerCase()||x.name.toLowerCase()===tok.toLowerCase()); return mem?`<span class="mention">@${esc(mem.name)}</span>`:full; }); }
+function notify(memberIds, by, commentId, replyId, snippet){ for(const to of memberIds){ if(MEMBERS.find(x=>x.id===to)?.name===by) continue; notifications.push({ id:'n'+Math.abs(hash(to+by+snippet+performance.now())).toString(36), to, by, commentId, replyId:replyId||null, snippet:(snippet||'').slice(0,60), ts:Date.now(), read:false }); } saveNotif(); renderBell(); }
+
+/* ---- render ---- */
+const listEl=document.getElementById('list');
+function render(){
+  const hiAll=new Highlight(), hiStale=new Highlight();
+  art.querySelectorAll('.anno-el,.anno-active').forEach(e=>e.classList.remove('anno-el','anno-active'));
+  for(const c of comments){ const loc=locate(art,c); c.anchorStatus=loc.status; c._loc=loc;
+    if(c.target.type==='text'){ if(loc.status==='anchored'){ const r=rangeFromOffsets(art,loc.start,loc.end); if(r)hiAll.add(r); } else if(loc.status==='stale'){ const r=rangeFromOffsets(art,loc.start,loc.end); if(r)hiStale.add(r); } }
+    else if(loc.el){ loc.el.classList.add('anno-el'); } }
+  CSS.highlights.set('cmt-all',hiAll); CSS.highlights.set('cmt-stale',hiStale);
+  const shown=comments.filter(c=> filter==='open'?c.lifecycle==='open': filter==='resolved'?c.lifecycle==='resolved':(c.anchorStatus==='stale'||c.anchorStatus==='orphaned'));
+  listEl.innerHTML=''; if(!shown.length) listEl.innerHTML=`<p class="empty">${emptyMsg()}</p>`;
+  for(const c of shown) listEl.appendChild(card(c));
+  document.getElementById('count').textContent=comments.length;
+  document.querySelectorAll('.filters button[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===filter)));
+  renderBell(); renderSignoff();
+}
+
+/* ---- per-reader sign-off verdict (the alignment signal; PRD north-star) ---- */
+function renderSignoff(){
+  const me=ME[role], mine=verdicts[me]||null, box=document.getElementById('signoff');
+  const vlabel=k=>k?({approve:'Approve',changes:'Request changes',block:'Block'})[k]:'—';
+  box.innerHTML=`<div class="so-title">Your sign-off (${esc(me)})</div><div class="so-btns">`+
+    SIGNOFF.map(o=>`<button data-k="${o.k}" aria-pressed="${mine===o.k}">${o.l}</button>`).join('')+`</div>`+
+    `<div class="so-roster">${MEMBERS.map(m=>`${esc(m.name)}: ${vlabel(verdicts[m.name])}`).join(' · ')}</div>`;
+  box.querySelectorAll('.so-btns button').forEach(b=>b.onclick=()=>{ verdicts[me]=(verdicts[me]===b.dataset.k)?undefined:b.dataset.k; saveVerdicts(); renderSignoff(); });
+}
+function emptyMsg(){ return filter==='open'?'No open comments. Select text or click “Comment on element”.':filter==='resolved'?'No resolved comments yet.':'Nothing needs re-anchoring.'; }
+
+function card(c){
+  const el=document.createElement('div'); el.className='cmt '+(c.lifecycle==='resolved'?'resolved':'');
+  const lb=c.lifecycle==='resolved'?'<span class="badge b-resolved">resolved</span>':'<span class="badge b-open">open</span>';
+  const ab={anchored:'<span class="badge b-anchored">anchored</span>',stale:'<span class="badge b-stale">stale — content changed</span>',orphaned:'<span class="badge b-orphaned">orphaned</span>'}[c.anchorStatus];
+  const fb=c.feedbackType?`<span class="badge ${FB[c.feedbackType].cls}">${FB[c.feedbackType].label}</span>`:'';
+  el.innerHTML=`<div class="badges">${fb}${lb}${ab}</div>`;
+  el.insertAdjacentHTML('beforeend', c.target.type==='element'?`<p class="q" data-q>${c.target.tag} · “${esc(c.target.snippet)}”</p>`:`<p class="q" data-q>“${esc(c.target.quote)}”</p>`);
+  if(c.body) el.insertAdjacentHTML('beforeend',`<p class="body">${renderBody(c.body)}</p>`);
+  if(c.anchorStatus==='orphaned') el.insertAdjacentHTML('beforeend',`<p class="lkc">⚠ anchor lost. Last attached to: “${esc(c.lastKnownContext)}”</p>`);
+  if(c.lifecycle==='resolved'&&c.resolution){ const edited=!!c.resolution.changeLink; el.insertAdjacentHTML('beforeend',`<p class="resnote ${edited?'edited':''}">${edited?'Addressed (content edited)':'Resolved (no change)'}`+(edited?`<span class="ba">before: “${esc(c.resolution.changeLink.before)}”</span><span class="ba">after: “${esc(c.resolution.changeLink.after||'(removed)')}”</span>`:'')+`</p>`); }
+
+  // replies
+  if(c.replies.length){ const rdiv=document.createElement('div'); rdiv.className='replies';
+    rdiv.innerHTML=c.replies.map(r=>`<div class="reply"><span class="who">${esc(r.author)}</span> <span class="rt">· ${new Date(r.ts).toLocaleString()}</span><div>${renderBody(r.body)}</div></div>`).join('');
+    el.appendChild(rdiv); }
+
+  // reply composer
+  const comp=document.createElement('div'); comp.className='composer';
+  comp.innerHTML=`<textarea placeholder="Reply… use @ to mention"></textarea><div class="row"><button class="cancel mini">Cancel</button><button class="post go mini">Reply</button></div>`;
+  el.appendChild(comp);
+  const ta=comp.querySelector('textarea'); attachMention(ta);
+  comp.querySelector('.cancel').onclick=()=>{ comp.style.display='none'; ta.value=''; };
+  comp.querySelector('.post').onclick=()=>{ const body=ta.value.trim(); if(body){ addReply(c.id,body); } comp.style.display='none'; ta.value=''; };
+
+  const acts=document.createElement('div'); acts.className='actions';
+  acts.appendChild(btn('Reply','mini',()=>{ comp.style.display=comp.style.display==='block'?'none':'block'; if(comp.style.display==='block') ta.focus(); }));
+  acts.appendChild(c.lifecycle==='open'?btn('Resolve','mini',()=>resolve(c)):btn('Reopen','mini',()=>reopen(c)));
+  if(c.anchorStatus!=='anchored') acts.appendChild(btn(reattachId===c.id?'Pick / select…':'Re-attach','mini',()=>startReattach(c)));
+  acts.appendChild(btn('History','mini',()=>{ const h=el.querySelector('.hist'); h.style.display=h.style.display==='none'?'block':'none'; }));
+  acts.appendChild(btn('Delete','mini',()=>removeComment(c.id)));
+  el.appendChild(acts);
+
+  const hist=document.createElement('div'); hist.className='hist'; hist.style.display='none';
+  hist.innerHTML=c.history.map(e=>`<div class="ev">• ${esc(e.event)} — ${esc(e.who)} · ${new Date(e.when).toLocaleString()}</div>`).join('');
+  el.appendChild(hist);
+  el.insertAdjacentHTML('beforeend',`<div class="meta">${esc(c.author)} · ${new Date(c.createdAt).toLocaleString()}</div>`);
+  el.querySelector('[data-q]').onclick=()=>highlightActive(c);
+  return el;
+}
+function btn(l,cls,fn){ const b=document.createElement('button'); b.textContent=l; b.className=cls; b.onclick=fn; return b; }
+
+function highlightActive(c){ const loc=locate(art,c);
+  if(c.target.type==='element'){ if(!loc.el) return; art.querySelectorAll('.anno-active').forEach(e=>e.classList.remove('anno-active')); loc.el.classList.add('anno-active'); loc.el.scrollIntoView({block:'center',behavior:'smooth'}); return; }
+  if(loc.status==='orphaned') return; const r=rangeFromOffsets(art,loc.start,loc.end); const h=new Highlight(); if(r)h.add(r); CSS.highlights.set('cmt-active',h);
+  r&&r.startContainer.parentElement&&r.startContainer.parentElement.scrollIntoView({block:'center',behavior:'smooth'}); }
+
+/* ---- threads ---- */
+function addReply(commentId, body){ const c=comments.find(x=>x.id===commentId); if(!c) return null;
+  const author=ME[role]; const mentions=parseMentions(body);
+  const reply={ id:'r'+Math.abs(hash(body+performance.now())).toString(36), author, body, mentions, ts:Date.now() };
+  c.replies.push(reply); c.history.push({event:'reply added',who:author,when:Date.now()});
+  notify(mentions, author, commentId, reply.id, body);
+  save(); render(); return reply.id; }
+
+/* ---- lifecycle ---- */
+function resolve(c){ const loc=c._loc||locate(art,c); c.lifecycle='resolved'; c.resolution={resolvedBy:ME[role],resolvedAt:Date.now()};
+  if(loc.status==='stale') c.resolution.changeLink={ before:c.target.type==='element'?c.target.snippet:c.target.quote, after:loc.newText||loc.newSnippet };
+  else if(loc.status==='orphaned') c.resolution.changeLink={ before:c.lastKnownContext, after:'' };
+  c.history.push({event:loc.status==='anchored'?'resolved (no change)':'resolved (content edited)',who:ME[role],when:Date.now()});
+  save(); render(); setStatus('Comment resolved — kept in history.'); }
+function reopen(c){ c.lifecycle='open'; c.resolution=null; c.history.push({event:'reopened',who:ME[role],when:Date.now()}); save(); render(); }
+function removeComment(id){ comments=comments.filter(c=>c.id!==id); notifications=notifications.filter(n=>n.commentId!==id); save(); saveNotif(); render(); setStatus('Comment deleted.'); }
+function clearResolved(){ const ids=new Set(comments.filter(c=>c.lifecycle==='resolved').map(c=>c.id)); if(!ids.size){ setStatus('No resolved comments to clear.'); return; } comments=comments.filter(c=>!ids.has(c.id)); notifications=notifications.filter(n=>!ids.has(n.commentId)); save(); saveNotif(); render(); setStatus(`Cleared ${ids.size} resolved comment(s).`); }
+function startReattach(c){ reattachId=(reattachId===c.id)?null:c.id;
+  if(reattachId && c.target.type==='element'){ setPicking(true); setStatus('Re-attach: click the new element to bind this feedback to.',true); }
+  else setStatus(reattachId?'Re-attach: select the new text to bind this comment to.':null,true); render(); }
+
+/* ---- text selection -> new comment OR re-attach ---- */
+const pop=document.getElementById('pop'); let pending=null;
+document.addEventListener('mouseup',()=>{ if(editing||picking) return;
+  const sel=window.getSelection(); if(!sel.rangeCount||sel.isCollapsed) return;
+  const r=sel.getRangeAt(0); if(!art.contains(r.commonAncestorContainer)) return;
+  const text=fullText(art); const start=offsetOf(art,r.startContainer,r.startOffset), end=offsetOf(art,r.endContainer,r.endOffset); if(end-start<2) return;
+  const anchor={ type:'text', quote:text.slice(start,end), prefix:text.slice(Math.max(0,start-PREFIX_LEN),start), suffix:text.slice(end,end+PREFIX_LEN) };
+  if(reattachId){ const c=comments.find(x=>x.id===reattachId); if(c&&c.target.type==='text'){ c.target=anchor; c.lastKnownContext=anchor.quote; c.history.push({event:'re-anchored to new text',who:ME[role],when:Date.now()}); } reattachId=null; sel.removeAllRanges(); save(); render(); setStatus('Comment re-attached.'); return; }
+  pending=anchor; const rect=r.getBoundingClientRect(); pop.style.left=(scrollX+rect.left)+'px'; pop.style.top=(scrollY+rect.bottom+6)+'px'; pop.style.display='block'; const tx=document.getElementById('popText'); tx.focus(); });
+attachMention(document.getElementById('popText'));
+document.getElementById('popSave').onclick=()=>{ const body=document.getElementById('popText').value.trim(); if(pending&&body){ const c=mkComment(pending,null,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); } closePop(); };
+document.getElementById('popCancel').onclick=closePop;
+function closePop(){ pop.style.display='none'; document.getElementById('popText').value=''; pending=null; }
+
+/* ---- element picker ---- */
+const pickBtn=document.getElementById('pickToggle'), pickbox=document.getElementById('pickbox'), epop=document.getElementById('epop');
+let epending=null, fbType='flag';
+function setPicking(on){ picking=on; pickBtn.setAttribute('aria-pressed',String(on)); art.classList.toggle('picking',on); if(!on){ pickbox.style.display='none'; hoverEl=null; } setStatus(on?'Pick mode: hover an element, click to give feedback.':null,on); }
+pickBtn.onclick=()=>setPicking(!picking);
+art.addEventListener('mousemove',e=>{ if(!picking) return; const el=e.target; if(!art.contains(el)||el===art){ pickbox.style.display='none'; hoverEl=null; return; } hoverEl=el; const r=el.getBoundingClientRect(); pickbox.style.display='block'; pickbox.style.left=(scrollX+r.left-2)+'px'; pickbox.style.top=(scrollY+r.top-2)+'px'; pickbox.style.width=r.width+'px'; pickbox.style.height=r.height+'px'; });
+art.addEventListener('click',e=>{ if(!picking) return; e.preventDefault(); e.stopPropagation(); const el=e.target; if(!art.contains(el)||el===art) return;
+  if(reattachId){ const c=comments.find(x=>x.id===reattachId); if(c&&c.target.type==='element'){ c.target=makeElTarget(el); c.lastKnownContext=c.target.snippet; c.history.push({event:'re-anchored to new element',who:ME[role],when:Date.now()}); } reattachId=null; setPicking(false); save(); render(); setStatus('Feedback re-attached.'); return; }
+  epending=makeElTarget(el); selectFb('flag'); document.getElementById('epopText').value='';
+  const r=el.getBoundingClientRect(); epop.style.left=(scrollX+Math.min(r.left,innerWidth-300))+'px'; epop.style.top=(scrollY+r.bottom+6)+'px'; epop.style.display='block'; document.getElementById('epopText').focus(); }, true);
+document.querySelectorAll('#epop .fbtypes button').forEach(b=>b.onclick=()=>selectFb(b.dataset.fb));
+function selectFb(t){ fbType=t; document.querySelectorAll('#epop .fbtypes button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fb===t))); }
+attachMention(document.getElementById('epopText'));
+document.getElementById('epopSave').onclick=()=>{ if(epending){ const c=mkComment(epending,fbType,document.getElementById('epopText').value.trim()); comments.push(c); notify(c.mentions,c.author,c.id,null,c.body); save(); render(); } closeEpop(); };
+document.getElementById('epopCancel').onclick=closeEpop;
+function closeEpop(){ epop.style.display='none'; epending=null; setPicking(false); }
+
+function mkComment(target,feedbackType,body){ const author=ME[role]; return { id:cid(), author, createdAt:Date.now(), body:body||'', feedbackType:feedbackType||null, lifecycle:'open', anchorStatus:'anchored', target, lastKnownContext:target.type==='element'?target.snippet:target.quote, resolution:null, replies:[], mentions:parseMentions(body), history:[{event:'created',who:author,when:Date.now()}] }; }
+
+/* ---- @mention autocomplete (shared dropdown) ---- */
+const mbox=document.getElementById('mentionbox'); let mboxTA=null, mboxSel=0, mboxItems=[];
+function attachMention(ta){ ta.addEventListener('input',()=>mentionUpdate(ta)); ta.addEventListener('keydown',e=>{ if(mbox.style.display!=='block'||mboxTA!==ta) return; if(e.key==='ArrowDown'){e.preventDefault();mboxSel=(mboxSel+1)%mboxItems.length;paintMbox();} else if(e.key==='ArrowUp'){e.preventDefault();mboxSel=(mboxSel-1+mboxItems.length)%mboxItems.length;paintMbox();} else if(e.key==='Enter'){e.preventDefault();pickMention(mboxItems[mboxSel]);} else if(e.key==='Escape'){hideMbox();} }); ta.addEventListener('blur',()=>setTimeout(hideMbox,150)); }
+function mentionUpdate(ta){ const v=ta.value.slice(0,ta.selectionStart); const m=/@(\w*)$/.exec(v); if(!m){ hideMbox(); return; } const q=m[1].toLowerCase(); mboxItems=MEMBERS.filter(x=>x.id.startsWith(q)||x.name.toLowerCase().startsWith(q)); if(!mboxItems.length){ hideMbox(); return; } mboxTA=ta; mboxSel=0; const r=ta.getBoundingClientRect(); mbox.style.left=(scrollX+r.left)+'px'; mbox.style.top=(scrollY+r.bottom+2)+'px'; mbox.style.display='block'; paintMbox(); }
+function paintMbox(){ mbox.innerHTML=mboxItems.map((m,i)=>`<div data-i="${i}" aria-selected="${i===mboxSel}">@${esc(m.name)}</div>`).join(''); mbox.querySelectorAll('div').forEach(d=>d.onmousedown=ev=>{ev.preventDefault();pickMention(mboxItems[+d.dataset.i]);}); }
+function pickMention(mem){ if(!mboxTA||!mem) return; const ta=mboxTA; const pos=ta.selectionStart; const before=ta.value.slice(0,pos).replace(/@(\w*)$/,'@'+mem.name+' '); ta.value=before+ta.value.slice(pos); ta.focus(); ta.selectionStart=ta.selectionEnd=before.length; hideMbox(); }
+function hideMbox(){ mbox.style.display='none'; mboxTA=null; mboxItems=[]; }
+
+/* ---- notifications panel ---- */
+const notifPanel=document.getElementById('notif');
+function renderBell(){ const me=ME[role]; const myUnread=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me && !n.read); const dot=document.getElementById('bellDot'); if(myUnread.length){ dot.style.display='inline-block'; dot.textContent=myUnread.length; } else dot.style.display='none'; }
+document.getElementById('bell').onclick=()=>{ const open=notifPanel.style.display==='block'; if(open){ notifPanel.style.display='none'; return; }
+  const me=ME[role]; const mine=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me).sort((a,b)=>b.ts-a.ts);
+  document.getElementById('notifList').innerHTML = mine.length? mine.map(n=>`<div class="notif-item ${n.read?'':'unread'}"><b>${esc(n.by)}</b> mentioned you<div class="ni-meta">“${esc(n.snippet)}” · ${new Date(n.ts).toLocaleString()}</div></div>`).join('') : '<div class="notif-item">No notifications for '+esc(me)+'.</div>';
+  notifPanel.style.display='block';
+  mine.forEach(n=>n.read=true); saveNotif(); renderBell(); };
+
+/* ---- role / edit / filter ---- */
+const rReader=document.getElementById('roleReader'),rAuthor=document.getElementById('roleAuthor'),editBtn=document.getElementById('editToggle');
+function setRole(n){ role=n; rReader.setAttribute('aria-pressed',String(n==='reader')); rAuthor.setAttribute('aria-pressed',String(n==='author')); editBtn.disabled=n!=='author'; if(n!=='author'&&editing) toggleEdit(false); notifPanel.style.display='none'; renderBell(); renderSignoff(); setStatus(null); }
+rReader.onclick=()=>setRole('reader'); rAuthor.onclick=()=>setRole('author');
+function toggleEdit(force){ editing=(typeof force==='boolean')?force:!editing; if(editing) setPicking(false); art.contentEditable=editing?'true':'false'; editBtn.setAttribute('aria-pressed',String(editing)); if(editing){ closePop(); closeEpop(); setStatus('Edit mode ON — change text. Comments re-anchor when you turn it off.'); } else render(); }
+editBtn.onclick=()=>toggleEdit();
+document.querySelectorAll('.filters button[data-filter]').forEach(b=>b.onclick=()=>{ filter=b.dataset.filter; render(); });
+document.getElementById('clearResolved').onclick=clearResolved;
+document.getElementById('reset').onclick=()=>{ comments=[]; notifications=[]; verdicts={}; save(); saveNotif(); saveVerdicts(); filter='open'; render(); };
+
+/* ---- utils ---- */
+function setStatus(msg,act){ const s=document.getElementById('status'); s.classList.toggle('act',!!act); s.textContent=msg||(editing?'Edit mode ON':picking?'Pick mode ON':(role==='author'?'Author (Nirat): Edit mode changes the artifact; @ to mention.':'Reader (Alex): select text or “Comment on element”; @ to mention.')); }
+function esc(s){ return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+function cid(){ return 'c'+Math.abs(hash(JSON.stringify(comments)+performance.now())).toString(36); }
+function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h; }
+function load(){ try{ return (JSON.parse(localStorage.getItem(STORE_KEY))||[]).map(norm); }catch{ return []; } }
+function norm(c){ c.target=c.target||{type:'text'}; c.target.type=c.target.type||'text'; c.lifecycle=c.lifecycle||'open'; c.anchorStatus=c.anchorStatus||'anchored'; c.feedbackType=c.feedbackType||null; c.history=c.history||[]; c.resolution=c.resolution||null; c.replies=c.replies||[]; c.mentions=c.mentions||[]; c.lastKnownContext=c.lastKnownContext||(c.target.quote||c.target.snippet||''); return c; }
+function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(comments.map(c=>({...c,_loc:undefined})))); }
+function loadNotif(){ try{ return JSON.parse(localStorage.getItem(NOTIF_KEY))||[]; }catch{ return []; } }
+function saveNotif(){ localStorage.setItem(NOTIF_KEY,JSON.stringify(notifications)); }
+function loadVerdicts(){ try{ return JSON.parse(localStorage.getItem(VKEY))||{}; }catch{ return {}; } }
+function saveVerdicts(){ localStorage.setItem(VKEY,JSON.stringify(verdicts)); }
+
+if(!('highlights' in CSS)) setStatus('This browser lacks the CSS Custom Highlight API — use a recent Chrome/Edge/Firefox.');
+
+/* debug handle */
+window.__spike={ get comments(){return comments;}, set comments(v){comments=v;save();}, get notifications(){return notifications;},
+  locate:(c)=>locate(art,c), fullText:()=>fullText(art), resolve:(id)=>resolve(comments.find(c=>c.id===id)), reopen:(id)=>reopen(comments.find(c=>c.id===id)),
+  setFilter:(f)=>{filter=f;render();}, setRole, addReply, removeComment, clearResolved,
+  addText:(quote,body)=>{ const t=fullText(art),i=t.indexOf(quote); const c=mkComment({type:'text',quote,prefix:t.slice(Math.max(0,i-32),i),suffix:t.slice(i+quote.length,i+quote.length+32)},null,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); return c.id; },
+  addEl:(sel,fb,body)=>{ const el=art.querySelector(sel); if(!el) return null; const c=mkComment(makeElTarget(el),fb,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); return c.id; },
+  render, art };
+
+render();
+</script>
+</body>
+</html>

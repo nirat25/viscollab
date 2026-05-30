@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# generated spike output
+spike/out/
+spike/results/
+
+# secrets
+.env
+*.local
+
+# OS
+Thumbs.db
+.DS_Store

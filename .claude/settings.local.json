@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(npm install *)",
+      "Bash(rtk npm *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk npx *)",
+      "mcp__Claude_Preview__preview_start",
+      "WebSearch",
+      "WebFetch(domain:web.hypothes.is)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:helpx.adobe.com)",
+      "Bash(git --version)",
+      "Bash(gh auth *)",
+      "Bash(rtk git *)"
+    ]
+  }
+}

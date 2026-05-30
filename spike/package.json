@@ -1,0 +1,24 @@
+{
+  "name": "htmlcollab-spike",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "P1-T1 conversion-fidelity spike + eval harness (Decision/Approval doc type)",
+  "scripts": {
+    "convert": "tsx src/run.ts convert",
+    "eval": "tsx src/run.ts eval",
+    "validate": "tsx src/run.ts validate",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.67.0",
+    "mammoth": "^1.8.0",
+    "node-html-parser": "^6.1.13"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}

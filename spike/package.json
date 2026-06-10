@@ -8,7 +8,8 @@
     "convert": "tsx src/run.ts convert",
     "eval": "tsx src/run.ts eval",
     "validate": "tsx src/run.ts validate",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "eval:agent": "tsx src/run.ts eval-structure"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

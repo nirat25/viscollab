@@ -7,6 +7,7 @@ import { convert } from "./convert.ts";
 import { validateContract } from "./template.ts";
 import { runEval, computeGate } from "./harness.ts";
 import { providerInfo } from "./client.ts";
+import { judgeStructure } from "./judge-structure.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const OUT_DIR = join(ROOT, "out");
@@ -65,6 +66,35 @@ async function evalAll() {
   process.exit(gate.gatePassed ? 0 : 1);
 }
 
+async function evalStructureAll() {
+  const { readdir, readFile } = await import("node:fs/promises");
+  console.log(`[eval-structure] provider: ${providerInfo()}`);
+
+  if (!existsSync(OUT_DIR)) {
+    console.log(`[eval-structure] No output directory found at ${OUT_DIR}. Run 'npm run eval' first.`);
+    process.exit(1);
+  }
+
+  const entries = (await readdir(OUT_DIR)).filter((f) => f.endsWith(".html"));
+  if (entries.length === 0) {
+    console.log(`[eval-structure] No HTML files found in ${OUT_DIR}. Run 'npm run eval' first.`);
+    process.exit(1);
+  }
+
+  for (const file of entries) {
+    const html = await readFile(join(OUT_DIR, file), "utf8");
+    console.log(`\n[eval-structure] judging ${file}...`);
+    try {
+      const result = await judgeStructure(html);
+      for (const s of result.scores) {
+        console.log(`  ${s.pass ? "PASS" : "FAIL"}  ${s.id}: ${s.reason}`);
+      }
+    } catch (e) {
+      console.log(`  ERROR: ${(e as Error).message}`);
+    }
+  }
+}
+
 try {
   switch (cmd) {
     case "convert":
@@ -78,8 +108,11 @@ try {
     case "eval":
       await evalAll();
       break;
+    case "eval-structure":
+      await evalStructureAll();
+      break;
     default:
-      console.log("commands: convert <doc> | eval | validate <html>");
+      console.log("commands: convert <doc> | eval | eval-structure | validate <html>");
   }
 } catch (e) {
   console.error(`[error] ${(e as Error).message}`);

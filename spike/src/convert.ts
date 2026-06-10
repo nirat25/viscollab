@@ -6,7 +6,7 @@ import { complete, getModel } from "./client.ts";
 // Prompt version — bump on any change to system/user prompt. Recorded with every
 // eval result so fidelity scores are attributable to a prompt version (PRD P1-T1
 // "records per-prompt-version results"; P2-T2 regression gate).
-export const PROMPT_VERSION = "conv-v2-docagnostic";
+export const PROMPT_VERSION = "conv-v3-docagnostic";
 
 const SYSTEM = `You are a document conversion processor for a review-and-alignment platform.
 Your job: convert ANY document — you determine its type and purpose yourself — into a structured,

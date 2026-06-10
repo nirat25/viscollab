@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Challenger Test Harness</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+<style>body { font-family: monospace; white-space: pre-wrap; }</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+function log(msg) { document.getElementById('out').textContent += msg + '\n'; }
+function assert(cond, msg) { log((cond ? '✅ PASS: ' : '❌ FAIL: ') + msg); }
+
+const dmp = new diff_match_patch();
+dmp.Match_Distance = 1000;
+dmp.Match_Threshold = 0.5;
+
+function fuzzyFind(text,quote,hintIdx){
+  const loc = hintIdx >= 0 ? hintIdx : 0;
+  const pattern = quote.substring(0, 32);
+  const index = dmp.match_main(text, pattern, loc);
+  if (index === -1) return { index: -1, score: 0, length: 0 };
+  const margin = 50, start = Math.max(0, index - margin), end = Math.min(text.length, index + quote.length + margin);
+  const windowText = text.substring(start, end);
+  const diffs = dmp.diff_main(quote, windowText);
+  dmp.diff_cleanupSemantic(diffs);
+  let qPos = 0, tPos = 0, matches = 0, sOff = -1, eOff = 0;
+  for (const [op, txt] of diffs) {
+    if (op === 0) { if (sOff === -1) sOff = tPos; qPos += txt.length; tPos += txt.length; matches += txt.length; eOff = tPos; }
+    else if (op === -1) { if (sOff === -1) sOff = tPos; qPos += txt.length; }
+    else if (op === 1) { tPos += txt.length; }
+    if (qPos >= quote.length) break;
+  }
+  if (sOff === -1) sOff = 0;
+  const matchLen = eOff - sOff;
+  return { index: start + sOff, score: matchLen > 0 ? matches / Math.max(quote.length, matchLen) : 0, length: matchLen };
+}
+
+log("== Stress Test 1: Fuzzy Matching for Long Spans (Start Edit) ==");
+const longQuote = "The quick brown fox jumps over the lazy dog. ".repeat(20);
+// Edit the first 35 chars
+const editedText = "A surprisingly slow red fox leaps over the lazy dog. " + "The quick brown fox jumps over the lazy dog. ".repeat(19);
+
+const res1 = fuzzyFind(editedText, longQuote, 0);
+assert(res1.index !== -1, "fuzzyFind should find the long quote even if the start is edited.");
+log("Result 1: " + JSON.stringify(res1));
+
+log("\n== Stress Test 2: Fuzzy Matching Distance Limit (Move Text) ==");
+// Move the text 2000 chars away, with a bad hint
+const paddedText = "X".repeat(2500) + longQuote;
+// give hint = 0
+const res2 = fuzzyFind(paddedText, longQuote, 0);
+assert(res2.index !== -1, "fuzzyFind should find the text even if it moved beyond Match_Distance.");
+log("Result 2: " + JSON.stringify(res2));
+
+</script>
+</body>
+</html>

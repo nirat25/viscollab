@@ -78,6 +78,7 @@
   .pop .row { display:flex; justify-content:flex-end; gap:6px; margin-top:6px; }
   .pop button { background:#333; color:#fff; border:none; }
   .pop button.go { background:var(--accent); }
+  #mergepop { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:360px; z-index:30; }
   .fbtypes { display:flex; gap:5px; margin-bottom:7px; }
   .fbtypes button { flex:1; padding:5px 4px; font-size:12px; }
   .fbtypes button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); }
@@ -93,18 +94,18 @@
   .status { font-size:12px; color:var(--muted); margin-left:auto; max-width:36ch; text-align:right; }
   .status.act { color:var(--accent); font-weight:600; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
 </head>
 <body>
 <header>
   <h1>Collaboration spike</h1>
   <div class="role">
     you:
-    <button id="roleReader" aria-pressed="true">Reader (Alex)</button>
-    <button id="roleAuthor" aria-pressed="false">Author (Nirat)</button>
+    <select id="userSwitch"></select>
   </div>
   <label class="loadbtn" title="load a converted artifact (.html) from spike/out">Load artifact<input type="file" id="loadArtifact" accept=".html,text/html" hidden></label>
   <button id="pickToggle" aria-pressed="false">Comment on element</button>
-  <button id="editToggle" aria-pressed="false" disabled>Edit mode</button>
+  <button id="editToggle" aria-pressed="false">Edit mode</button>
   <button id="bell" class="bell">🔔<span class="dot" id="bellDot" style="display:none">0</span></button>
   <button id="reset" title="clear stored comments">Reset</button>
   <span class="status" id="status">Reader: select text, or click “Comment on element”. Use @ to mention.</span>
@@ -166,6 +167,12 @@
   <textarea id="epopText" placeholder="Optional note… use @ to mention"></textarea>
   <div class="row"><button id="epopCancel">Cancel</button><button id="epopSave" class="go">Add feedback</button></div>
 </div>
+<div id="mergepop" class="pop">
+  <div style="font-size:13px; margin-bottom:8px;">Are you sure you want to re-attach?</div>
+  <div style="font-size:12px; color:var(--muted); margin-bottom:4px;"><b>Old context:</b> <span id="mergeOld"></span></div>
+  <div style="font-size:12px; color:var(--muted); margin-bottom:8px;"><b>New context:</b> <span id="mergeNew"></span></div>
+  <div class="row"><button id="mergeCancel">Cancel</button><button id="mergeConfirm" class="go">Confirm</button></div>
+</div>
 
 <script>
 /* ───────────────────────────────────────────────────────────────────────────
@@ -181,12 +188,12 @@ const PREFIX_LEN = 32, STALE_WINDOW = 400, FUZZY_THRESHOLD = 0.6, STORE_KEY = 'c
 const SIGNOFF = [{k:'approve',l:'Approve'},{k:'changes',l:'Request changes'},{k:'block',l:'Block'}];
 const FB = { approve:{label:'Approve',cls:'b-approve'}, flag:{label:'Flag',cls:'b-flag'}, needs:{label:'Needs data',cls:'b-needs'}, question:{label:'Question',cls:'b-question'} };
 const MEMBERS = [{id:'nirat',name:'Nirat'},{id:'alex',name:'Alex'},{id:'priya',name:'Priya'},{id:'sam',name:'Sam'}];
-const ME = { reader:'Alex', author:'Nirat' };  // current display name by role
+let currentUser = localStorage.getItem('collab-user') || MEMBERS[0].name;
 
 let comments = load();
 let notifications = loadNotif();
 let verdicts = loadVerdicts();   // { "Alex":"changes", "Nirat":"approve" } — per-reader sign-off
-let role='reader', editing=false, filter='open', reattachId=null;
+let editing=false, filter='open', reattachId=null;
 let picking=false, hoverEl=null;
 
 /* ---- text-offset model ---- */
@@ -196,15 +203,125 @@ function offsetOf(root,node,off){ let a=0; for(const t of textNodes(root)){ if(t
 function rangeFromOffsets(root,start,end){ const nodes=textNodes(root); let a=0,r=document.createRange(),set=false;
   for(const t of nodes){ const len=t.nodeValue.length; if(!set&&start<=a+len){ r.setStart(t,start-a); set=true; } if(set&&end<=a+len){ r.setEnd(t,end-a); return r; } a+=len; } return null; }
 
-/* ---- fuzzy match (Sørensen–Dice on char bigrams) — last-resort re-anchor tier ---- */
-function bigrams(s){ const m=new Map(); for(let i=0;i<s.length-1;i++){ const g=s.substr(i,2); m.set(g,(m.get(g)||0)+1); } return m; }
-function dice(a,b){ if(a===b) return 1; if(a.length<2||b.length<2) return 0; const A=bigrams(a),B=bigrams(b); let inter=0; for(const [g,n] of A){ if(B.has(g)) inter+=Math.min(n,B.get(g)); } return 2*inter/((a.length-1)+(b.length-1)); }
-function fuzzyFind(text,quote,hintIdx){ const q=quote.toLowerCase(), qlen=quote.length, lt=text.toLowerCase();
-  let best=-1,bestScore=0; const step=Math.max(1,Math.floor(qlen/8));
-  for(let i=0;i<=Math.max(0,text.length-Math.min(qlen,text.length));i+=step){ let sc=dice(q,lt.substr(i,qlen));
-    if(hintIdx>=0) sc-=Math.min(0.08,Math.abs(i-hintIdx)/text.length*0.08); // slight bias toward last-known location
-    if(sc>bestScore){ bestScore=sc; best=i; } }
-  return { index:best, score:bestScore }; }
+/* ---- fuzzy match (diff-match-patch) — last-resort re-anchor tier ---- */
+const dmp = new diff_match_patch();
+dmp.Match_Distance = 1000000;
+dmp.Match_Threshold = 0.5;
+function fuzzyFind(text,pre,q,suf,hintIdx){
+  const searchStr = (pre||"") + q + (suf||"");
+  const loc = hintIdx >= 0 ? hintIdx : 0;
+  let index = -1, chunkOffset = 0;
+  for (let i = 0; i < searchStr.length; i += 32) {
+    const pattern = searchStr.substring(i, i + 32);
+    index = dmp.match_main(text, pattern, loc + i);
+    if (index !== -1) { chunkOffset = i; break; }
+  }
+  if (index === -1) return { index: -1, score: 0, length: 0 };
+  const baseIndex = Math.max(0, index - chunkOffset);
+  const margin = 50, start = Math.max(0, baseIndex - margin), end = Math.min(text.length, baseIndex + searchStr.length + margin);
+  const windowText = text.substring(start, end);
+  const diffs = dmp.diff_main(searchStr, windowText);
+  dmp.diff_cleanupSemantic(diffs);
+  
+  const blocks = [];
+  let currentEdit = null;
+  let sPos = 0, tPos = 0, matches = 0;
+  let sOff = -1, eOff = 0;
+
+  for (const [op, txt] of diffs) {
+    const len = txt.length;
+    if (op === 0) {
+      if (currentEdit) {
+        blocks.push(currentEdit);
+        currentEdit = null;
+      }
+      blocks.push({
+        type: 'match',
+        s_start: sPos, s_end: sPos + len,
+        t_start: tPos, t_end: tPos + len,
+        matches: len
+      });
+      if (sOff === -1) sOff = tPos;
+      eOff = tPos + len;
+      matches += len;
+      sPos += len;
+      tPos += len;
+    } else {
+      if (!currentEdit) {
+        currentEdit = {
+          type: 'edit',
+          s_start: sPos, s_end: sPos,
+          t_start: tPos, t_end: tPos
+        };
+      }
+      if (op === -1) {
+        currentEdit.s_end += len;
+        sPos += len;
+      } else if (op === 1) {
+        currentEdit.t_end += len;
+        tPos += len;
+      }
+    }
+  }
+  if (currentEdit) {
+    blocks.push(currentEdit);
+  }
+
+  const preLen = (pre||"").length;
+  const qStart = preLen, qEnd = preLen + q.length;
+
+  let qStartOff = -1, qEndOff = -1;
+  let startEditBlock = null, endEditBlock = null;
+
+  for (const b of blocks) {
+    if (b.type === 'edit') {
+      if (b.s_start <= qStart && qStart <= b.s_end) startEditBlock = b;
+      if (b.s_start <= qEnd && qEnd <= b.s_end) endEditBlock = b;
+    }
+  }
+
+  if (startEditBlock && startEditBlock === endEditBlock) {
+    qStartOff = startEditBlock.t_start;
+    qEndOff = startEditBlock.t_end;
+  } else {
+    if (startEditBlock) {
+      qStartOff = startEditBlock.t_end;
+    } else {
+      for (const b of blocks) {
+        if (b.type === 'match' && b.s_start <= qStart && qStart <= b.s_end) {
+          qStartOff = b.t_start + (qStart - b.s_start);
+          break;
+        }
+      }
+    }
+
+    if (endEditBlock) {
+      qEndOff = endEditBlock.t_start;
+    } else {
+      for (const b of blocks) {
+        if (b.type === 'match' && b.s_start <= qEnd && qEnd <= b.s_end) {
+          qEndOff = b.t_start + (qEnd - b.s_start);
+          break;
+        }
+      }
+    }
+  }
+
+  if (sOff === -1) sOff = 0;
+  if (qStartOff === -1) qStartOff = sOff;
+  if (qEndOff === -1) qEndOff = qStartOff;
+
+  if (qStartOff > qEndOff) {
+    const tmp = qStartOff;
+    qStartOff = qEndOff;
+    qEndOff = tmp;
+  }
+  
+  const fullMatchLen = eOff - sOff;
+  const matchLen = qEndOff - qStartOff;
+  const score = fullMatchLen > 0 ? matches / Math.max(searchStr.length, fullMatchLen) : 0;
+  return { index: start + qStartOff, score, length: matchLen };
+}
 
 /* ---- element anchoring ---- */
 function normText(s){ return (s||'').replace(/\s+/g,' ').trim(); }
@@ -226,13 +343,12 @@ function locate(root,c){
   const text=fullText(root), q=t.quote, pre=t.prefix, suf=t.suffix;
   if(!q) return {status:'orphaned'};
   const hits=[]; let i=text.indexOf(q); while(i!==-1){ hits.push(i); i=text.indexOf(q,i+1); }
-  if(hits.length===1) return {status:'anchored',start:hits[0],end:hits[0]+q.length};
-  if(hits.length>1){ let best=hits[0],bs=-1; for(const h of hits){ const p=text.slice(Math.max(0,h-pre.length),h),s=text.slice(h+q.length,h+q.length+suf.length); const sc=(p.endsWith(pre)?pre.length:0)+(s.startsWith(suf)?suf.length:0); if(sc>bs){bs=sc;best=h;} } return {status:'anchored',start:best,end:best+q.length}; }
+  if(hits.length>0){ let best=hits[0],bs=0; for(const h of hits){ const p=text.slice(Math.max(0,h-pre.length),h),s=text.slice(h+q.length,h+q.length+suf.length); const sc=(p.endsWith(pre)?pre.length:0)+(s.startsWith(suf)?suf.length:0); if(sc>bs){bs=sc;best=h;} } if(bs>0) return {status:'anchored',start:best,end:best+q.length}; }
   if(pre&&suf){ const pi=text.indexOf(pre); if(pi!==-1){ const ap=pi+pre.length, si=text.indexOf(suf,ap); if(si!==-1&&si-ap<=STALE_WINDOW) return {status:'stale',start:ap,end:si,newText:text.slice(ap,si)}; } }
   // fuzzy tier: quote edited in place AND its context shifted. Re-anchor to the best approximate
   // match; below threshold -> orphan (never silently bind to possibly-wrong text).
-  const hint=pre?text.indexOf(pre):-1; const f=fuzzyFind(text,q,hint>=0?hint+pre.length:-1);
-  if(f.score>=FUZZY_THRESHOLD){ const end=Math.min(text.length,f.index+q.length); return {status:'stale',start:f.index,end,newText:text.slice(f.index,end),fuzzy:+f.score.toFixed(2)}; }
+  const hint=pre?text.indexOf(pre):-1; const f=fuzzyFind(text,pre,q,suf,hint>=0?hint:-1);
+  if(f.score>=FUZZY_THRESHOLD){ const end=Math.min(text.length,f.index+(f.length ?? q.length)); return {status:'stale',start:f.index,end,newText:text.slice(f.index,end),fuzzy:+f.score.toFixed(2)}; }
   return {status:'orphaned'};
 }
 
@@ -260,7 +376,7 @@ function render(){
 
 /* ---- per-reader sign-off verdict (the alignment signal; PRD north-star) ---- */
 function renderSignoff(){
-  const me=ME[role], mine=verdicts[me]||null, box=document.getElementById('signoff');
+  const me=currentUser, mine=verdicts[me]||null, box=document.getElementById('signoff');
   const vlabel=k=>k?({approve:'Approve',changes:'Request changes',block:'Block'})[k]:'—';
   box.innerHTML=`<div class="so-title">Your sign-off (${esc(me)})</div><div class="so-btns">`+
     SIGNOFF.map(o=>`<button data-k="${o.k}" aria-pressed="${mine===o.k}">${o.l}</button>`).join('')+`</div>`+
@@ -317,33 +433,67 @@ function highlightActive(c){ const loc=locate(art,c);
 
 /* ---- threads ---- */
 function addReply(commentId, body){ const c=comments.find(x=>x.id===commentId); if(!c) return null;
-  const author=ME[role]; const mentions=parseMentions(body);
+  const author=currentUser; const mentions=parseMentions(body);
   const reply={ id:'r'+Math.abs(hash(body+performance.now())).toString(36), author, body, mentions, ts:Date.now() };
   c.replies.push(reply); c.history.push({event:'reply added',who:author,when:Date.now()});
   notify(mentions, author, commentId, reply.id, body);
   save(); render(); return reply.id; }
 
 /* ---- lifecycle ---- */
-function resolve(c){ const loc=c._loc||locate(art,c); c.lifecycle='resolved'; c.resolution={resolvedBy:ME[role],resolvedAt:Date.now()};
+function resolve(c){ const loc=c._loc||locate(art,c); c.lifecycle='resolved'; c.resolution={resolvedBy:currentUser,resolvedAt:Date.now()};
   if(loc.status==='stale') c.resolution.changeLink={ before:c.target.type==='element'?c.target.snippet:c.target.quote, after:loc.newText||loc.newSnippet };
   else if(loc.status==='orphaned') c.resolution.changeLink={ before:c.lastKnownContext, after:'' };
-  c.history.push({event:loc.status==='anchored'?'resolved (no change)':'resolved (content edited)',who:ME[role],when:Date.now()});
+  c.history.push({event:loc.status==='anchored'?'resolved (no change)':'resolved (content edited)',who:currentUser,when:Date.now()});
   save(); render(); setStatus('Comment resolved — kept in history.'); }
-function reopen(c){ c.lifecycle='open'; c.resolution=null; c.history.push({event:'reopened',who:ME[role],when:Date.now()}); save(); render(); }
+function reopen(c){ c.lifecycle='open'; c.resolution=null; c.history.push({event:'reopened',who:currentUser,when:Date.now()}); save(); render(); }
 function removeComment(id){ comments=comments.filter(c=>c.id!==id); notifications=notifications.filter(n=>n.commentId!==id); save(); saveNotif(); render(); setStatus('Comment deleted.'); }
 function clearResolved(){ const ids=new Set(comments.filter(c=>c.lifecycle==='resolved').map(c=>c.id)); if(!ids.size){ setStatus('No resolved comments to clear.'); return; } comments=comments.filter(c=>!ids.has(c.id)); notifications=notifications.filter(n=>!ids.has(n.commentId)); save(); saveNotif(); render(); setStatus(`Cleared ${ids.size} resolved comment(s).`); }
-function startReattach(c){ reattachId=(reattachId===c.id)?null:c.id;
+function startReattach(c){ document.getElementById('mergepop').style.display='none'; mergeAction=null; reattachId=(reattachId===c.id)?null:c.id;
   if(reattachId && c.target.type==='element'){ setPicking(true); setStatus('Re-attach: click the new element to bind this feedback to.',true); }
   else setStatus(reattachId?'Re-attach: select the new text to bind this comment to.':null,true); render(); }
 
+/* ---- re-attach merge ux ---- */
+let mergeAction = null, modalCommentId = null;
+function showMergePop(c, newTarget, onConfirm) {
+  const pop = document.getElementById('mergepop');
+  modalCommentId = c.id;
+  document.getElementById('mergeOld').textContent = c.lastKnownContext || '(unknown)';
+  document.getElementById('mergeNew').textContent = newTarget.type === 'element' ? newTarget.snippet : newTarget.quote;
+  mergeAction = onConfirm;
+  pop.style.display = 'block';
+}
+document.getElementById('mergeCancel').onclick = () => {
+  document.getElementById('mergepop').style.display = 'none';
+  if (reattachId === modalCommentId) {
+    reattachId = null;
+    setPicking(false);
+  }
+  mergeAction = null;
+};
+document.getElementById('mergeConfirm').onclick = () => {
+  document.getElementById('mergepop').style.display = 'none';
+  if(mergeAction) mergeAction();
+  mergeAction = null;
+};
+
 /* ---- text selection -> new comment OR re-attach ---- */
 const pop=document.getElementById('pop'); let pending=null;
-document.addEventListener('mouseup',()=>{ if(editing||picking) return;
+document.addEventListener('mouseup',()=>{ if(editing) return;
   const sel=window.getSelection(); if(!sel.rangeCount||sel.isCollapsed) return;
   const r=sel.getRangeAt(0); if(!art.contains(r.commonAncestorContainer)) return;
   const text=fullText(art); const start=offsetOf(art,r.startContainer,r.startOffset), end=offsetOf(art,r.endContainer,r.endOffset); if(end-start<2) return;
   const anchor={ type:'text', quote:text.slice(start,end), prefix:text.slice(Math.max(0,start-PREFIX_LEN),start), suffix:text.slice(end,end+PREFIX_LEN) };
-  if(reattachId){ const c=comments.find(x=>x.id===reattachId); if(c&&c.target.type==='text'){ c.target=anchor; c.lastKnownContext=anchor.quote; c.history.push({event:'re-anchored to new text',who:ME[role],when:Date.now()}); } reattachId=null; sel.removeAllRanges(); save(); render(); setStatus('Comment re-attached.'); return; }
+  if(reattachId){
+    const c=comments.find(x=>x.id===reattachId);
+    if(c){
+      showMergePop(c, anchor, () => {
+        c.target=anchor; c.lastKnownContext=anchor.quote; c.history.push({event:'re-anchored to new text',who:currentUser,when:Date.now()});
+        if(reattachId===c.id) { reattachId=null; setPicking(false); } save(); render(); setStatus('Comment re-attached.');
+      });
+    } else { reattachId=null; setPicking(false); }
+    sel.removeAllRanges(); return;
+  }
+  if(picking) return;
   pending=anchor; const rect=r.getBoundingClientRect(); pop.style.left=(scrollX+rect.left)+'px'; pop.style.top=(scrollY+rect.bottom+6)+'px'; pop.style.display='block'; const tx=document.getElementById('popText'); tx.focus(); });
 attachMention(document.getElementById('popText'));
 document.getElementById('popSave').onclick=()=>{ const body=document.getElementById('popText').value.trim(); if(pending&&body){ const c=mkComment(pending,null,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); } closePop(); };
@@ -356,8 +506,20 @@ let epending=null, fbType='flag';
 function setPicking(on){ picking=on; pickBtn.setAttribute('aria-pressed',String(on)); art.classList.toggle('picking',on); if(!on){ pickbox.style.display='none'; hoverEl=null; } setStatus(on?'Pick mode: hover an element, click to give feedback.':null,on); }
 pickBtn.onclick=()=>setPicking(!picking);
 art.addEventListener('mousemove',e=>{ if(!picking) return; const el=e.target; if(!art.contains(el)||el===art){ pickbox.style.display='none'; hoverEl=null; return; } hoverEl=el; const r=el.getBoundingClientRect(); pickbox.style.display='block'; pickbox.style.left=(scrollX+r.left-2)+'px'; pickbox.style.top=(scrollY+r.top-2)+'px'; pickbox.style.width=r.width+'px'; pickbox.style.height=r.height+'px'; });
-art.addEventListener('click',e=>{ if(!picking) return; e.preventDefault(); e.stopPropagation(); const el=e.target; if(!art.contains(el)||el===art) return;
-  if(reattachId){ const c=comments.find(x=>x.id===reattachId); if(c&&c.target.type==='element'){ c.target=makeElTarget(el); c.lastKnownContext=c.target.snippet; c.history.push({event:'re-anchored to new element',who:ME[role],when:Date.now()}); } reattachId=null; setPicking(false); save(); render(); setStatus('Feedback re-attached.'); return; }
+art.addEventListener('click',e=>{ if(!picking) return; e.preventDefault(); e.stopPropagation(); 
+  const sel=window.getSelection(); if(sel.rangeCount && !sel.isCollapsed) return;
+  const el=e.target; if(!art.contains(el)||el===art) return;
+  if(reattachId){
+    const c=comments.find(x=>x.id===reattachId);
+    if(c){
+      const t = makeElTarget(el);
+      showMergePop(c, t, () => {
+        c.target=t; c.lastKnownContext=t.snippet; c.history.push({event:'re-anchored to new element',who:currentUser,when:Date.now()});
+        if(reattachId===c.id) { reattachId=null; setPicking(false); } save(); render(); setStatus('Feedback re-attached.');
+      });
+    } else { reattachId=null; setPicking(false); }
+    return;
+  }
   epending=makeElTarget(el); selectFb('flag'); document.getElementById('epopText').value='';
   const r=el.getBoundingClientRect(); epop.style.left=(scrollX+Math.min(r.left,innerWidth-300))+'px'; epop.style.top=(scrollY+r.bottom+6)+'px'; epop.style.display='block'; document.getElementById('epopText').focus(); }, true);
 document.querySelectorAll('#epop .fbtypes button').forEach(b=>b.onclick=()=>selectFb(b.dataset.fb));
@@ -367,7 +529,7 @@ document.getElementById('epopSave').onclick=()=>{ if(epending){ const c=mkCommen
 document.getElementById('epopCancel').onclick=closeEpop;
 function closeEpop(){ epop.style.display='none'; epending=null; setPicking(false); }
 
-function mkComment(target,feedbackType,body){ const author=ME[role]; return { id:cid(), author, createdAt:Date.now(), body:body||'', feedbackType:feedbackType||null, lifecycle:'open', anchorStatus:'anchored', target, lastKnownContext:target.type==='element'?target.snippet:target.quote, resolution:null, replies:[], mentions:parseMentions(body), history:[{event:'created',who:author,when:Date.now()}] }; }
+function mkComment(target,feedbackType,body){ const author=currentUser; return { id:cid(), author, createdAt:Date.now(), body:body||'', feedbackType:feedbackType||null, lifecycle:'open', anchorStatus:'anchored', target, lastKnownContext:target.type==='element'?target.snippet:target.quote, resolution:null, replies:[], mentions:parseMentions(body), history:[{event:'created',who:author,when:Date.now()}] }; }
 
 /* ---- @mention autocomplete (shared dropdown) ---- */
 const mbox=document.getElementById('mentionbox'); let mboxTA=null, mboxSel=0, mboxItems=[];
@@ -379,18 +541,22 @@ function hideMbox(){ mbox.style.display='none'; mboxTA=null; mboxItems=[]; }
 
 /* ---- notifications panel ---- */
 const notifPanel=document.getElementById('notif');
-function renderBell(){ const me=ME[role]; const myUnread=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me && !n.read); const dot=document.getElementById('bellDot'); if(myUnread.length){ dot.style.display='inline-block'; dot.textContent=myUnread.length; } else dot.style.display='none'; }
+function renderBell(){ const me=currentUser; const myUnread=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me && !n.read); const dot=document.getElementById('bellDot'); if(myUnread.length){ dot.style.display='inline-block'; dot.textContent=myUnread.length; } else dot.style.display='none'; }
 document.getElementById('bell').onclick=()=>{ const open=notifPanel.style.display==='block'; if(open){ notifPanel.style.display='none'; return; }
-  const me=ME[role]; const mine=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me).sort((a,b)=>b.ts-a.ts);
+  const me=currentUser; const mine=notifications.filter(n=>MEMBERS.find(x=>x.id===n.to)?.name===me).sort((a,b)=>b.ts-a.ts);
   document.getElementById('notifList').innerHTML = mine.length? mine.map(n=>`<div class="notif-item ${n.read?'':'unread'}"><b>${esc(n.by)}</b> mentioned you<div class="ni-meta">“${esc(n.snippet)}” · ${new Date(n.ts).toLocaleString()}</div></div>`).join('') : '<div class="notif-item">No notifications for '+esc(me)+'.</div>';
   notifPanel.style.display='block';
   mine.forEach(n=>n.read=true); saveNotif(); renderBell(); };
 
 /* ---- role / edit / filter ---- */
-const rReader=document.getElementById('roleReader'),rAuthor=document.getElementById('roleAuthor'),editBtn=document.getElementById('editToggle');
-function setRole(n){ role=n; rReader.setAttribute('aria-pressed',String(n==='reader')); rAuthor.setAttribute('aria-pressed',String(n==='author')); editBtn.disabled=n!=='author'; if(n!=='author'&&editing) toggleEdit(false); notifPanel.style.display='none'; renderBell(); renderSignoff(); setStatus(null); }
-rReader.onclick=()=>setRole('reader'); rAuthor.onclick=()=>setRole('author');
-function toggleEdit(force){ editing=(typeof force==='boolean')?force:!editing; if(editing) setPicking(false); art.contentEditable=editing?'true':'false'; editBtn.setAttribute('aria-pressed',String(editing)); if(editing){ closePop(); closeEpop(); setStatus('Edit mode ON — change text. Comments re-anchor when you turn it off.'); } else render(); }
+const editBtn=document.getElementById('editToggle');
+function initUserSwitch(){
+  const sel=document.getElementById('userSwitch');
+  sel.innerHTML = MEMBERS.map(m=>`<option value="${m.name}" ${m.name===currentUser?'selected':''}>${m.name}</option>`).join('');
+  sel.onchange=(e)=>{ currentUser=e.target.value; localStorage.setItem('collab-user',currentUser); notifPanel.style.display='none'; renderBell(); renderSignoff(); setStatus(null); };
+}
+initUserSwitch();
+function toggleEdit(force){ editing=(typeof force==='boolean')?force:!editing; if(editing) setPicking(false); art.contentEditable=editing?'true':'false'; editBtn.setAttribute('aria-pressed',String(editing)); if(editing){ closePop(); closeEpop(); setStatus('Edit mode ON — change text. Comments re-anchor when you turn it off.'); } else { localStorage.setItem(ART_KEY, art.innerHTML); render(); } }
 editBtn.onclick=()=>toggleEdit();
 document.querySelectorAll('.filters button[data-filter]').forEach(b=>b.onclick=()=>{ filter=b.dataset.filter; render(); });
 document.getElementById('clearResolved').onclick=clearResolved;
@@ -404,7 +570,7 @@ document.getElementById('loadArtifact').onchange=e=>{ const f=e.target.files[0];
 document.getElementById('reset').onclick=()=>{ comments=[]; notifications=[]; verdicts={}; save(); saveNotif(); saveVerdicts(); filter='open'; render(); };
 
 /* ---- utils ---- */
-function setStatus(msg,act){ const s=document.getElementById('status'); s.classList.toggle('act',!!act); s.textContent=msg||(editing?'Edit mode ON':picking?'Pick mode ON':(role==='author'?'Author (Nirat): Edit mode changes the artifact; @ to mention.':'Reader (Alex): select text or “Comment on element”; @ to mention.')); }
+function setStatus(msg,act){ const s=document.getElementById('status'); s.classList.toggle('act',!!act); s.textContent=msg||(editing?'Edit mode ON':picking?'Pick mode ON':`${currentUser}: select text or “Comment on element”; @ to mention.`); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 function cid(){ return 'c'+Math.abs(hash(JSON.stringify(comments)+performance.now())).toString(36); }
 function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h; }
@@ -421,7 +587,7 @@ if(!('highlights' in CSS)) setStatus('This browser lacks the CSS Custom Highligh
 /* debug handle */
 window.__spike={ get comments(){return comments;}, set comments(v){comments=v;save();}, get notifications(){return notifications;},
   locate:(c)=>locate(art,c), fullText:()=>fullText(art), resolve:(id)=>resolve(comments.find(c=>c.id===id)), reopen:(id)=>reopen(comments.find(c=>c.id===id)),
-  setFilter:(f)=>{filter=f;render();}, setRole, addReply, removeComment, clearResolved, loadArtifact,
+  setFilter:(f)=>{filter=f;render();}, addReply, removeComment, clearResolved, loadArtifact,
   addText:(quote,body)=>{ const t=fullText(art),i=t.indexOf(quote); const c=mkComment({type:'text',quote,prefix:t.slice(Math.max(0,i-32),i),suffix:t.slice(i+quote.length,i+quote.length+32)},null,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); return c.id; },
   addEl:(sel,fb,body)=>{ const el=art.querySelector(sel); if(!el) return null; const c=mkComment(makeElTarget(el),fb,body); comments.push(c); notify(c.mentions,c.author,c.id,null,body); save(); render(); return c.id; },
   render, art };

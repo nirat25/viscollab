@@ -3,13 +3,14 @@
 // surfaces THIS document's own load-bearing point and structures it for reading,
 // whatever the document is. (a)/(b) graded; (c)/(d) zero-tolerance on the high-stakes subset.
 
-export const RUBRIC_VERSION = "rubric-v2-docagnostic";
+export const RUBRIC_VERSION = "rubric-v3-docagnostic";
 
 export type CriterionId =
   | "a_lead_surfaced"
   | "b_structure_aids_comprehension"
   | "c_no_emphasis_inversion"
-  | "d_no_fabrication_omission";
+  | "d_no_fabrication_omission"
+  | "e_design_profile_applied";
 
 export interface Criterion {
   id: CriterionId;
@@ -47,13 +48,20 @@ export const CRITERIA: Criterion[] = [
     question:
       "Confirm the artifact neither fabricates content absent from the source NOR omits any material point present in the source.",
   },
+  {
+    id: "e_design_profile_applied",
+    title: "Design profile applied",
+    zeroTolerance: false,
+    question:
+      "Was a clear design profile (e.g., Tufte or Executive Brief) selected and applied appropriately to the document or its sections?",
+  },
 ];
 
 // Phase-gate thresholds (PRD P1-T1).
 export const THRESHOLDS = {
   // graded criteria must pass on >= 80% of the golden set
   gradedPassRate: 0.8,
-  gradedCriteria: ["a_lead_surfaced", "b_structure_aids_comprehension"] as CriterionId[],
+  gradedCriteria: ["a_lead_surfaced", "b_structure_aids_comprehension", "e_design_profile_applied"] as CriterionId[],
   // zero-tolerance criteria must pass on 100% of the high-stakes subset
   zeroToleranceCriteria: ["c_no_emphasis_inversion", "d_no_fabrication_omission"] as CriterionId[],
 };

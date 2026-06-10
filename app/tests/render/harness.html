@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<!--
+  P2-T3 Test Harness — Progressive-Disclosure Renderer
+  A realistic HTMLCollab artifact with all required progressive-disclosure patterns:
+    - BLUF / digest section visible by default (above fold)
+    - <details><summary> sections for depth (all start closed)
+    - Internal anchor navigation
+    - Keyboard-accessible disclosure controls
+    - All hrefs resolve to real ids
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P2-T3 Test Harness — Vendor Consolidation</title>
+  <style>
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      color: #1a1a1a;
+      line-height: 1.6;
+      background: #fff;
+    }
+
+    /* BLUF box — always visible above the fold */
+    .bluf {
+      background: #f7f7f0;
+      border-left: 4px solid #2a6e3f;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.75rem;
+      border-radius: 0 4px 4px 0;
+    }
+    .bluf .label {
+      font-size: 0.7rem;
+      font-weight: bold;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #2a6e3f;
+      margin-bottom: 0.3rem;
+    }
+    .bluf .headline {
+      font-size: 1.2rem;
+      font-weight: bold;
+      margin: 0 0 0.25rem;
+    }
+    .bluf p {
+      margin: 0;
+      font-size: 0.95rem;
+      color: #333;
+    }
+
+    /* Section label */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 0.3rem;
+      margin: 1.75rem 0 0.85rem;
+    }
+
+    /* Nav bar */
+    .artifact-nav {
+      font-size: 0.82rem;
+      color: #555;
+      margin: 1.5rem 0 1rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .artifact-nav a {
+      color: #2a6e3f;
+      text-decoration: none;
+    }
+    .artifact-nav a:hover { text-decoration: underline; }
+
+    /* Action list */
+    .action-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .action-list li {
+      display: flex;
+      gap: 0.6rem;
+      align-items: baseline;
+      padding: 0.4rem 0;
+      border-bottom: 1px dotted #ddd;
+      font-size: 0.95rem;
+    }
+    .action-list li:last-child { border-bottom: none; }
+    .badge {
+      font-size: 0.68rem;
+      font-weight: bold;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      border-radius: 3px;
+      padding: 0.1em 0.45em;
+      background: #2a6e3f;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    /* Cost table */
+    .cost-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin-top: 0.5rem;
+    }
+    .cost-table thead tr { background: #f0f0ea; }
+    .cost-table th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.72rem;
+      font-weight: bold;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #555;
+    }
+    .cost-table td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #eee;
+    }
+    .cost-table tr.recommended td { font-weight: bold; color: #2a6e3f; }
+
+    /* Details / summary — progressive disclosure */
+    details.section {
+      border: 1px solid #e0e0d8;
+      border-radius: 4px;
+      margin-top: 1rem;
+      overflow: hidden;
+    }
+    details.section summary {
+      cursor: pointer;
+      padding: 0.65rem 1rem;
+      font-size: 0.88rem;
+      font-weight: bold;
+      color: #2a6e3f;
+      background: #f7f7f0;
+      list-style: none;
+      user-select: none;
+    }
+    details.section summary::-webkit-details-marker { display: none; }
+    details.section summary::before { content: '▶ '; font-size: 0.65rem; }
+    details.section[open] summary::before { content: '▼ '; }
+    details.section .body {
+      padding: 0.85rem 1rem;
+      font-size: 0.92rem;
+      color: #333;
+    }
+
+    /* Footer nav */
+    .footer-nav {
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: #999;
+      border-top: 1px solid #eee;
+      padding-top: 0.75rem;
+    }
+    .footer-nav a { color: #2a6e3f; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Digest / BLUF — always visible, no interaction required ─────────── -->
+  <div class="bluf" id="bluf" data-testid="bluf">
+    <div class="label">Bottom Line</div>
+    <div class="headline" id="headline">Consolidate to Vendor A — saves $120k/year</div>
+    <p>Engineering manages three overlapping analytics vendors. Consolidating onto Vendor A
+       this quarter eliminates redundancy and reduces integration overhead by an estimated
+       <strong>$120,000 per year</strong>.</p>
+  </div>
+
+  <!-- ── Anchored navigation ──────────────────────────────────────────────── -->
+  <nav class="artifact-nav" id="nav" aria-label="Artifact sections" data-testid="nav">
+    <a href="#actions">Required Actions</a>
+    <a href="#cost">Cost Comparison</a>
+    <a href="#background">Background</a>
+    <a href="#conclusion">Conclusion</a>
+  </nav>
+
+  <!-- ── Required Actions — visible in digest ─────────────────────────────── -->
+  <div class="section-label" id="actions" data-testid="section-actions">Required Actions</div>
+  <ul class="action-list">
+    <li><span class="badge">This Quarter</span> Consolidate onto Vendor A</li>
+    <li><span class="badge" style="background:#dde8e1;color:#2a6e3f">By Q3</span> Migrate reporting dashboards</li>
+    <li><span class="badge" style="background:#dde8e1;color:#2a6e3f">Concurrent</span> Negotiate volume discount</li>
+  </ul>
+
+  <!-- ── Cost table — visible in digest ──────────────────────────────────── -->
+  <div class="section-label" id="cost" data-testid="section-cost">Cost Comparison</div>
+  <table class="cost-table">
+    <thead>
+      <tr><th>Vendor</th><th>Monthly Cost</th><th>Features</th></tr>
+    </thead>
+    <tbody>
+      <tr class="recommended"><td>Vendor A (Recommended)</td><td>$8,000</td><td>Full suite</td></tr>
+      <tr><td>Vendor B</td><td>$5,000</td><td>Limited reporting</td></tr>
+      <tr><td>Vendor C</td><td>$7,000</td><td>Real-time only</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Background — hidden until expanded ──────────────────────────────── -->
+  <details class="section" id="background" data-testid="details-background">
+    <summary id="background-summary">Background &amp; Context</summary>
+    <div class="body">
+      <p>The engineering team currently manages <strong>three separate analytics vendors</strong>
+         with significant overlap in capabilities. The combined cost centre is $240k annually.</p>
+      <p>Vendor A provides the full feature set that Vendors B and C together provide, at a
+         combined savings of $120k per year after consolidation.</p>
+    </div>
+  </details>
+
+  <!-- ── Conclusion — hidden until expanded ──────────────────────────────── -->
+  <details class="section" id="conclusion" data-testid="details-conclusion">
+    <summary id="conclusion-summary">Conclusion</summary>
+    <div class="body">
+      <p>Consolidation onto Vendor A will save <strong>$120k per year</strong> and reduce
+         integration overhead across the engineering team. The migration path is low-risk
+         given Vendor A's full-suite coverage.</p>
+    </div>
+  </details>
+
+  <!-- ── Footer nav ──────────────────────────────────────────────────────── -->
+  <div class="footer-nav" data-testid="footer-nav">
+    <a href="#bluf">↑ Back to top</a> &nbsp;·&nbsp;
+    <a href="#actions">Actions</a> &nbsp;·&nbsp;
+    <a href="#cost">Cost</a> &nbsp;·&nbsp;
+    <a href="#background">Background</a> &nbsp;·&nbsp;
+    <a href="#conclusion">Conclusion</a>
+  </div>
+
+</body>
+</html>

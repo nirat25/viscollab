@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Challenger Test Suite</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+</head>
+<body>
+    <h1>Test Results</h1>
+    <ul id="results"></ul>
+
+    <script>
+        function assert(condition, message) {
+            const li = document.createElement('li');
+            li.textContent = (condition ? "✅ PASS: " : "❌ FAIL: ") + message;
+            li.style.color = condition ? "green" : "red";
+            document.getElementById('results').appendChild(li);
+        }
+
+        // --- Mock setup ---
+        const dmp = new diff_match_patch();
+        dmp.Match_Distance = 1000;
+        dmp.Match_Threshold = 0.5;
+        function fuzzyFind(text,quote,hintIdx){
+          const pattern = quote.substring(0, 32); 
+          const loc = hintIdx >= 0 ? hintIdx : 0;
+          const index = dmp.match_main(text, pattern, loc);
+          if (index !== -1) {
+            return { index: index, score: 0.8 }; 
+          }
+          return { index: -1, score: 0 }; 
+        }
+
+        const FUZZY_THRESHOLD = 0.6;
+        function locate(text, c) {
+          const t = c.target;
+          const q = t.quote, pre = t.prefix, suf = t.suffix;
+          const hint=pre?text.indexOf(pre):-1; 
+          const f=fuzzyFind(text,q,hint>=0?hint+pre.length:-1);
+          if(f.score>=FUZZY_THRESHOLD){ 
+            const end=Math.min(text.length,f.index+q.length); 
+            return {status:'stale',start:f.index,end,newText:text.slice(f.index,end),fuzzy:+f.score.toFixed(2)}; 
+          }
+          return {status:'orphaned'};
+        }
+
+        // --- Test 1: Bitap Length Limit & Slicing Bug ---
+        function testLengthBug() {
+            const originalQuote = "This is a very long sentence that exceeds thirty two characters.";
+            // User modified the end of the sentence to make it much longer
+            const modifiedText = "This is a very long sentence that was completely modified after the first 32 chars and is now much longer.";
+            
+            const comment = {
+                target: {
+                    type: 'text',
+                    quote: originalQuote,
+                    prefix: "Before. ",
+                    suffix: " After."
+                }
+            };
+
+            const result = locate("Before. " + modifiedText + " After.", comment);
+            
+            // Expected: the re-anchored text should encompass the full new sentence.
+            // Actual: it truncates it to `q.length` characters.
+            const truncatedText = modifiedText.substring(0, originalQuote.length);
+            
+            assert(result.newText !== truncatedText, "Bug 1: fuzzyFind truncates re-anchored text to original quote length. Expected something smarter, got: " + result.newText);
+        }
+
+        // --- Test 2: Hardcoded Score ---
+        function testScoreBug() {
+            // A pattern that barely matches (dmp.match_main finds it due to 0.5 threshold)
+            const text = "Something completely different but has some common chars.";
+            const quote = "Some completely different string"; 
+            
+            const comment = { target: { type: 'text', quote: quote, prefix: "", suffix: "" } };
+            const result = locate(text, comment);
+            
+            // Expected: score should be calculated based on actual edit distance.
+            // Actual: always hardcoded to 0.8, meaning threshold 0.6 is meaningless.
+            assert(result.fuzzy !== 0.8, "Bug 2: fuzzy score is hardcoded to 0.8, bypassing the threshold. Result score: " + result.fuzzy);
+        }
+
+        testLengthBug();
+        testScoreBug();
+
+    </script>
+</body>
+</html>

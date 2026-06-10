@@ -72,6 +72,13 @@ export function validateContract(html: string): ContractResult {
   };
 }
 
+export const DESIGN_PROFILES = `
+DESIGN PROFILES:
+Select and apply the single most appropriate design profile for the document or section:
+- "Tufte": High data-ink ratio, dense information display, utilizes margin notes/asides (via clever HTML layout or native <details>/<summary> for deep dives). Best for technical, data-heavy, or analytical documents.
+- "Executive Brief": Highly skimmable, BLUF (Bottom Line Up Front), bullet-driven, clear hierarchy. Best for summaries, status updates, or leadership overviews.
+`.trim();
+
 // Doc-agnostic rendering spec injected into the conversion prompt. Principles, not
 // a template. The model determines the document's purpose and the structure that
 // best serves a reader.
@@ -93,5 +100,7 @@ principles for ANY document type:
 5. FIDELITY: do NOT fabricate content absent from the source; do NOT drop a material point; NEVER
    render a minor point more prominently than the document's main point.
 
-You choose the sections, their order, and the visual grammar — there is no fixed template.
+${DESIGN_PROFILES}
+
+You choose the sections, their order, and the visual grammar — there is no fixed template. Auto-select and apply the best design profile for the document.
 `.trim();

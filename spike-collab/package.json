@@ -1,0 +1,20 @@
+{
+  "name": "spike-collab",
+  "version": "1.0.0",
+  "description": "De-risks the **new hard bet** (plan-mod #3): in a hybrid edit model (author edits the artifact directly, reviewers review), can a reviewer's comment stay attached to the right content across author edits? Get this wrong and the collaboration layer — the product's differentiator — is untrustworthy.",
+  "main": "my_test.js",
+  "scripts": {
+    "test": "playwright test",
+    "eval": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "diff-match-patch": "^1.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

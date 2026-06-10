@@ -1,4 +1,6 @@
 import { parse } from 'node-html-parser';
+import { locate, getComments, setComments, type Comment } from './comments.js';
+import { diff_match_patch } from 'diff-match-patch';
 
 export type DocState = 'Draft' | 'Live';
 
@@ -72,6 +74,252 @@ export function splicePreservedSections(
   }
 
   return newRoot.toString();
+}
+
+function escapeHTML(str: string): string {
+  return str.replace(/[&<>"]/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m] || m));
+}
+
+function getDomRoot(html: string): any {
+  if (typeof document !== 'undefined') {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div;
+  } else {
+    const root = parse(html) as any;
+    const patchNode = (node: any) => {
+      if (node.nodeType === 3) {
+        if (node.nodeValue === undefined) {
+          Object.defineProperty(node, 'nodeValue', {
+            get() { return this.rawText; },
+            configurable: true
+          });
+        }
+      } else if (node.nodeType === 1) {
+        if (node.textContent === undefined) {
+          Object.defineProperty(node, 'textContent', {
+            get() { return this.text; },
+            configurable: true
+          });
+        }
+      }
+      if (node.childNodes) {
+        for (const child of node.childNodes) {
+          patchNode(child);
+        }
+      }
+    };
+    patchNode(root);
+    return root;
+  }
+}
+
+function getVerNum(vId: string): number | null {
+  const m = /^v?(\d+)$/.exec(vId);
+  return m ? parseInt(m[1]!, 10) : null;
+}
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+function wrapElementInIns(el: any) {
+  const leafItems = el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, td, th, li');
+  if (leafItems.length > 0) {
+    for (const item of leafItems) {
+      wrapElementInIns(item);
+    }
+  } else {
+    const text = el.text || '';
+    el.innerHTML = `<ins>${escapeHTML(text)}</ins>`;
+  }
+}
+
+function wrapElementInDel(el: any) {
+  const leafItems = el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, td, th, li');
+  if (leafItems.length > 0) {
+    for (const item of leafItems) {
+      wrapElementInDel(item);
+    }
+  } else {
+    const text = el.text || '';
+    el.innerHTML = `<del>${escapeHTML(text)}</del>`;
+  }
+}
+
+function diffTextNodes(oldEl: any, newEl: any) {
+  const oldText = oldEl.text || '';
+  const newText = newEl.text || '';
+
+  const dmp = new diff_match_patch();
+  const diffs = dmp.diff_main(oldText, newText);
+  dmp.diff_cleanupSemantic(diffs);
+
+  let html = '';
+  for (const [op, text] of diffs) {
+    const escaped = escapeHTML(text);
+    if (op === 0) {
+      html += escaped;
+    } else if (op === 1) {
+      html += `<ins>${escaped}</ins>`;
+    } else if (op === -1) {
+      html += `<del>${escaped}</del>`;
+    }
+  }
+  newEl.innerHTML = html;
+}
+
+function diffBlock(oldEl: any, newEl: any) {
+  const tag = newEl.tagName?.toLowerCase();
+  if (tag === 'table') {
+    const oldRows = oldEl.querySelectorAll('tr');
+    const newRows = newEl.querySelectorAll('tr');
+    const minRows = Math.min(oldRows.length, newRows.length);
+    for (let r = 0; r < minRows; r++) {
+      const oldCells = oldRows[r].querySelectorAll('td, th');
+      const newCells = newRows[r].querySelectorAll('td, th');
+      const minCells = Math.min(oldCells.length, newCells.length);
+      for (let c = 0; c < minCells; c++) {
+        diffTextNodes(oldCells[c], newCells[c]);
+      }
+      for (let c = minCells; c < newCells.length; c++) {
+        wrapElementInIns(newCells[c]);
+      }
+      for (let c = minCells; c < oldCells.length; c++) {
+        const delCell = parse(oldCells[c].toString());
+        wrapElementInDel(delCell);
+        newRows[r].appendChild(delCell);
+      }
+    }
+    for (let r = minRows; r < newRows.length; r++) {
+      wrapElementInIns(newRows[r]);
+    }
+    for (let r = minRows; r < oldRows.length; r++) {
+      const delRow = parse(oldRows[r].toString());
+      wrapElementInDel(delRow);
+      newEl.appendChild(delRow);
+    }
+  } else if (tag === 'ul' || tag === 'ol') {
+    const oldItems = oldEl.querySelectorAll('li');
+    const newItems = newEl.querySelectorAll('li');
+    const minItems = Math.min(oldItems.length, newItems.length);
+    for (let i = 0; i < minItems; i++) {
+      diffTextNodes(oldItems[i], newItems[i]);
+    }
+    for (let i = minItems; i < newItems.length; i++) {
+      wrapElementInIns(newItems[i]);
+    }
+    for (let i = minItems; i < oldItems.length; i++) {
+      const delItem = parse(oldItems[i].toString());
+      wrapElementInDel(delItem);
+      newEl.appendChild(delItem);
+    }
+  } else {
+    diffTextNodes(oldEl, newEl);
+  }
+}
+
+function diffNodes(oldEl: any, newEl: any) {
+  const tag = newEl.tagName?.toLowerCase();
+  if (tag === 'table' || tag === 'ul' || tag === 'ol') {
+    diffBlock(oldEl, newEl);
+  } else {
+    const hasElementChildren = newEl.childNodes.some((n: any) => n.nodeType === 1);
+    if (hasElementChildren) {
+      diffContainer(oldEl, newEl);
+    } else {
+      diffTextNodes(oldEl, newEl);
+    }
+  }
+}
+
+function diffContainer(oldEl: any, newEl: any) {
+  const oldChildren = oldEl.childNodes.filter((n: any) => n.nodeType === 1);
+  const newChildren = newEl.childNodes.filter((n: any) => n.nodeType === 1);
+
+  const finalChildren: any[] = [];
+  const matchedOld = new Set<any>();
+  const oldIdMap = new Map<string, any>();
+  for (const child of oldChildren) {
+    const id = child.getAttribute('id');
+    if (id) oldIdMap.set(id, child);
+  }
+
+  const newToOld = new Map<any, any>();
+  const unmatchedOldNoId = oldChildren.filter((c: any) => !c.getAttribute('id'));
+
+  for (const newChild of newChildren) {
+    const id = newChild.getAttribute('id');
+    let matched: any = null;
+    if (id) {
+      matched = oldIdMap.get(id);
+    } else {
+      const tag = newChild.tagName?.toLowerCase();
+      const idx = unmatchedOldNoId.findIndex((c: any) => c.tagName?.toLowerCase() === tag);
+      if (idx !== -1) {
+        matched = unmatchedOldNoId[idx];
+        unmatchedOldNoId.splice(idx, 1);
+      }
+    }
+    if (matched) {
+      newToOld.set(newChild, matched);
+      matchedOld.add(matched);
+    }
+  }
+
+  const insertedOld = new Set<any>();
+  for (const newChild of newChildren) {
+    const oldChild = newToOld.get(newChild);
+    if (oldChild) {
+      const oldIdx = oldChildren.indexOf(oldChild);
+      for (let i = 0; i < oldIdx; i++) {
+        const prevOld = oldChildren[i];
+        if (!matchedOld.has(prevOld) && !insertedOld.has(prevOld)) {
+          const delEl = parse(prevOld.toString());
+          wrapElementInDel(delEl);
+          finalChildren.push(delEl);
+          insertedOld.add(prevOld);
+        }
+      }
+      diffNodes(oldChild, newChild);
+      finalChildren.push(newChild);
+      insertedOld.add(oldChild);
+    } else {
+      wrapElementInIns(newChild);
+      finalChildren.push(newChild);
+    }
+  }
+
+  for (const oldChild of oldChildren) {
+    if (!matchedOld.has(oldChild) && !insertedOld.has(oldChild)) {
+      const delEl = parse(oldChild.toString());
+      wrapElementInDel(delEl);
+      finalChildren.push(delEl);
+      insertedOld.add(oldChild);
+    }
+  }
+
+  if (newEl.tagName) {
+    newEl.innerHTML = '';
+    for (const child of finalChildren) {
+      newEl.appendChild(child);
+    }
+  } else {
+    newEl.childNodes = [];
+    for (const child of finalChildren) {
+      newEl.appendChild(child);
+    }
+  }
 }
 
 export class CollabDoc {
@@ -188,6 +436,89 @@ export class CollabDoc {
     };
     this._versions.push(newVersion);
     this._currentState = 'Draft';
+  }
+
+  restoreVersion(versionNumber: number): void {
+    const targetVersion = this._versions.find(v => v.versionNumber === versionNumber);
+    if (!targetVersion) {
+      throw new Error(`Version ${versionNumber} not found.`);
+    }
+
+    const newVersionNumber = this._versions.length + 1;
+    const restoredHtml = targetVersion.html;
+
+    const newVersion: DocVersion = {
+      versionNumber: newVersionNumber,
+      html: restoredHtml,
+      status: 'Draft',
+      timestamp: new Date(),
+    };
+
+    const oldHtml = this.getCurrentHtml();
+    this._versions.push(newVersion);
+    this._currentState = 'Draft';
+    this._sequence += 1;
+
+    // Archive / restore internal comments based on restored section IDs
+    const restoredIds = this._extractElementIds(restoredHtml);
+    for (const c of this._comments) {
+      if (restoredIds.has(c.sectionId)) {
+        c.isArchived = false;
+      } else {
+        c.isArchived = true;
+      }
+    }
+
+    // Clone and re-anchor rich comments from comments.ts
+    const allComments = getComments();
+    const newCommentsToPush: Comment[] = [];
+    const root = getDomRoot(restoredHtml);
+
+    const candidateComments = allComments.filter(c => {
+      const ver = getVerNum(c.versionId);
+      return ver !== null && ver >= versionNumber;
+    });
+
+    for (const c of candidateComments) {
+      const res = locate(root, c);
+      const newCommentId = 'c' + Math.abs(hashString(JSON.stringify(c.target) + Date.now() + Math.random())).toString(36);
+
+      const clonedComment: Comment = {
+        ...c,
+        id: newCommentId,
+        versionId: 'v' + newVersionNumber,
+        anchorStatus: res.status,
+        posStart: res.status !== 'orphaned' ? res.start : undefined,
+        posEnd: res.status !== 'orphaned' ? res.end : undefined,
+        lastKnownContext: res.newText || res.newSnippet || c.lastKnownContext,
+        replies: c.replies.map(r => ({ ...r })),
+        history: [
+          ...c.history,
+          { event: `cloned from version ${c.versionId} during rollback`, who: 'System', when: Date.now() }
+        ]
+      };
+
+      newCommentsToPush.push(clonedComment);
+    }
+
+    if (newCommentsToPush.length > 0) {
+      setComments([...allComments, ...newCommentsToPush]);
+    }
+  }
+
+  getDiffHtml(vOldNum: number, vNewNum: number): string {
+    const oldVer = this._versions.find(v => v.versionNumber === vOldNum);
+    const newVer = this._versions.find(v => v.versionNumber === vNewNum);
+    if (!oldVer || !newVer) {
+      throw new Error(`Version ${vOldNum} or ${vNewNum} not found.`);
+    }
+
+    const oldRoot = parse(oldVer.html);
+    const newRoot = parse(newVer.html);
+
+    diffContainer(oldRoot, newRoot);
+
+    return newRoot.toString();
   }
 
   discardDraft(): void {

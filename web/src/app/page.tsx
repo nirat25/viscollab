@@ -421,6 +421,7 @@ export default function Home() {
 
   // Document root ref for dynamic location
   const documentRootRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // Convert Document Modal states
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
@@ -914,6 +915,9 @@ export default function Home() {
     if (target.closest(".surgical-tool-card")) {
       return;
     }
+    if (target.closest("[data-section-toolbar]")) {
+      return;
+    }
     const sectionEl = target.closest("[id]");
     if (sectionEl) {
       const id = sectionEl.getAttribute("id");
@@ -1389,6 +1393,30 @@ export default function Home() {
 
   const handleDocumentClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    const anchor = target.closest("a");
+    if (anchor) {
+      const href = anchor.getAttribute("href");
+      if (href && href.startsWith("#")) {
+        e.preventDefault();
+        const targetId = href.slice(1);
+        if (previewContainerRef.current) {
+          const container = previewContainerRef.current;
+          if (targetId === "top") {
+            container.scrollTo({ top: 0, behavior: "smooth" });
+          } else {
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) {
+              const containerRect = container.getBoundingClientRect();
+              const targetRect = targetEl.getBoundingClientRect();
+              const scrollOffset = targetRect.top - containerRect.top + container.scrollTop;
+              container.scrollTo({ top: scrollOffset, behavior: "smooth" });
+            }
+          }
+        }
+        return;
+      }
+    }
+
     const mark = target.closest("mark");
     if (mark) {
       const commentId = mark.getAttribute("data-comment-id");
@@ -1909,17 +1937,24 @@ export default function Home() {
 
             {/* Document Review Body */}
             <div 
+              ref={previewContainerRef}
               className="pane-preview-body"
               onMouseMove={handleMouseMove}
               onMouseLeave={() => {
                 setHoveredSectionId(null);
                 setHoveredElRect(null);
               }}
-              onScroll={() => {
-                setHoveredSectionId(null);
-                setHoveredElRect(null);
-              }}
+              onScroll={recalculateRects}
             >
+              {hoveredSectionId && (
+                <style>{`
+                  #${hoveredSectionId} {
+                    border-left: 3px solid #6366f1 !important;
+                    background-color: rgba(99, 102, 241, 0.02) !important;
+                    padding-left: 8px !important;
+                  }
+                `}</style>
+              )}
               
               <div 
                 ref={documentRootRef}
@@ -1948,19 +1983,19 @@ export default function Home() {
                 const rect = sectionRects[secId];
                 if (!rect) return null;
                 const isHovered = hoveredSectionId === secId;
+                if (!isHovered) return null;
                 const sectionMeta = sectionsMetadata.find(m => m.id === secId);
                 return (
                   <div 
                     key={secId}
-                    className={`absolute right-6 bg-white/95 backdrop-blur-sm border border-slate-200/60 shadow-sm rounded-xl p-1 z-30 flex items-center gap-1.5 transition-all opacity-60 hover:opacity-100 hover:shadow-md hover:border-indigo-300 ${
-                      isHovered ? "ring-1 ring-indigo-500/30" : ""
-                    }`}
+                    data-section-toolbar={secId}
+                    className="absolute right-4 md:right-6 bg-white/95 backdrop-blur-md border border-indigo-100 shadow-lg rounded-xl p-1 z-40 flex items-center gap-1.5 ring-1 ring-indigo-500/20 animate-toolbar-fade-in"
                     style={{
                       top: rect.top + 6,
                     }}
                   >
                     <div className="flex items-center gap-1 border-r border-slate-150 pr-1.5 pl-1">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 px-1.5 py-0.5 rounded-md truncate max-w-[140px]" title={sectionMeta?.title || secId}>
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 px-1.5 py-0.5 rounded-md truncate max-w-[80px] xs:max-w-[100px] sm:max-w-[140px]" title={sectionMeta?.title || secId}>
                         {sectionMeta?.title || secId}
                       </span>
                     </div>

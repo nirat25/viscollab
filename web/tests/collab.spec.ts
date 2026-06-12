@@ -37,7 +37,11 @@ test.describe("HTMLCollab Dashboard - E2E Polish", () => {
     // Login as collaborator
     await page.click('[data-testid="token-btn-collaborator"]');
 
+    // Wait for workspace to hydrate and section IDs to stabilize
+    await page.waitForTimeout(1000);
+
     // 1. Add a comment on background section
+    await page.locator('#background').hover();
     const commentBtn = page.locator('[data-testid="comment-btn-background"]');
     await expect(commentBtn).toBeVisible();
     await commentBtn.click();
@@ -80,7 +84,11 @@ test.describe("HTMLCollab Dashboard - E2E Polish", () => {
     // Login as collaborator
     await page.click('[data-testid="token-btn-collaborator"]');
 
+    // Wait for workspace to hydrate and section IDs to stabilize
+    await page.waitForTimeout(1000);
+
     // 1. Click AI Edit button on background section
+    await page.locator('#background').hover();
     const aiEditBtn = page.locator('[data-testid="ai-edit-btn-background"]');
     await expect(aiEditBtn).toBeVisible();
     await aiEditBtn.click();

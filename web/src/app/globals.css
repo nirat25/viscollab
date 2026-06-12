@@ -240,4 +240,27 @@ aside#tour-sidebar ::-webkit-scrollbar-thumb:hover {
   pointer-events: auto;
 }
 
+/* Document Preview Section Highlighting and Transitions */
+.vcd-wrap [id] {
+  transition: border-left 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding-left 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border-left: 3px solid transparent;
+}
+
+/* Custom fade-in for section toolbars */
+@keyframes toolbarFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toolbar-fade-in {
+  animation: toolbarFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+
 

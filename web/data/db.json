@@ -407,7 +407,7 @@
         "body": "Agreed, we should prioritize our product roadmap specifically around discovery and screening features first.",
         "createdAt": 1781286840857,
         "feedbackType": "approve",
-        "lifecycle": "open",
+        "lifecycle": "resolved",
         "anchorStatus": "anchored",
         "target": {
           "type": "text",
@@ -416,7 +416,10 @@
           "suffix": ""
         },
         "lastKnownContext": "highest-leverage opportunity sits in Steps 4–8",
-        "resolution": null,
+        "resolution": {
+          "resolvedBy": "Sam",
+          "resolvedAt": 1781293695190
+        },
         "replies": [],
         "mentions": [],
         "history": [
@@ -424,6 +427,11 @@
             "event": "created",
             "who": "Sam",
             "when": 1781286840857
+          },
+          {
+            "event": "resolved",
+            "who": "Sam",
+            "when": 1781293695190
           }
         ]
       },
@@ -449,17 +457,4 @@
         "history": [
           {
             "event": "created",
-            "who": "Alex",
-            "when": 1781286840857
-          }
-        ]
-      }
-    ],
-    "verdicts": {
-      "Sam": null,
-      "Alex": null,
-      "Priya": null,
-      "Nirat": null
-    }
-  }
-}
+         

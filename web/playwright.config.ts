@@ -10,7 +10,17 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     headless: true,
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video: process.env.CHROMIUM_EXECUTABLE_PATH ? "off" : "retain-on-failure",
+    // Optional override for environments where Playwright's managed browsers
+    // can't be downloaded (e.g. sandboxed CI). Unset locally -> default browser.
+    launchOptions: process.env.CHROMIUM_EXECUTABLE_PATH
+      ? {
+          executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+          args: (process.env.CHROMIUM_EXTRA_ARGS || "")
+            .split(" ")
+            .filter(Boolean),
+        }
+      : {},
   },
   projects: [
     {

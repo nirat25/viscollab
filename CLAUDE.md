@@ -9,8 +9,20 @@ A **complementary** review-and-alignment layer downstream of where teams draft (
 
 When PRD and spec conflict, PRD wins. The spec's `§6A` and `§7` reasoning is preserved (correctly) in the PRD's Part 4 decision log.
 
-## CURRENT STATUS — handoff (last updated 2026-05-30)
-*Read this to pick up the work. Two spikes exist; collaboration is the active focus (see plan-mod #3).*
+## CURRENT STATUS — handoff (last updated 2026-06-12)
+*Newest first. The `web/` Next.js app is the active MVP surface (supersedes spike-collab as the working app).*
+
+### `web/` — Next.js MVP (ACTIVE) — run: `cd app && npm run build`, then `cd web && npm run dev`
+**CRITICAL: `app/dist` must be rebuilt (`cd app && npm run build`) whenever `app/src` changes** — `web` imports the compiled `htmlcollab-app` package from `app/dist`, and a stale dist breaks `web` at import time (this exact failure happened 2026-06-12: `validateEditRequest` missing from dist; fixed by rebuild).
+- 2026-06-12 session: build green + all 208 unit tests pass; fixed two real hover-toolbar bugs in `web/src/components/DocumentSurface.tsx`:
+  1. Toolbar unmounted when the pointer moved toward its buttons (toolbar is a sibling of the artifact div → artifact `mouseleave` fired). Fixed via `relatedTarget` checks both ways.
+  2. Toolbar re-targeted instantly when the pointer crossed another section en route to the buttons (detached the click target mid-click). Fixed with hover-intent debounce (`HOVER_SWITCH_DELAY=180ms`): immediate show when nothing is shown, debounced switch otherwise.
+- Smoke-verified in a real browser: login/identity persistence, `<details>` toggle state persists across reload (localStorage per doc), hover toolbar appears and is clickable, text-selection → comment pill → composer pre-filled, section comment via toolbar.
+- `web/playwright.config.ts` supports `CHROMIUM_EXECUTABLE_PATH` / `CHROMIUM_EXTRA_ARGS` env overrides (sandboxed CI); behavior unchanged when unset.
+- e2e suite `web/tests/collab.spec.ts` exists (3 tests; auth + comment lifecycle verified passing). Owner decision 2026-06-12: full Playwright suite is NOT a priority — don't invest further until asked.
+
+## PREVIOUS STATUS — handoff (2026-05-30)
+*Two spikes exist; collaboration is the active focus (see plan-mod #3).*
 
 ### `spike-collab/` — collaboration layer (ACTIVE, the differentiator) — `index.html`, self-contained, no key
 Run: `python -m http.server 8123 --directory spike-collab` → open `http://localhost:8123/index.html` (needs CSS Custom Highlight API — recent Chrome/Edge/Firefox). Verify via the `window.__spike` debug handle (functional eval; screenshot was flaky).
@@ -87,22 +99,4 @@ Re-sequencing vs PRD §12 (which said de-risk conversion first):
 Phase order: **0 Validation → 1 De-risk spikes → 2 MVP build → 3 Dogfood → 4 Decision gate.**
 - Phase 1 entry: `P0-T2` done (target artifact chosen + sample docs exist).
 - Phase 2 entry: Phase 1 exit gate passed (`P1-T1` AND `P1-T2` hit thresholds; stack ADR `P1-T3` + template `P1-T4` decided).
-- **Phase 2 tasks were written before Phase 1 decisions exist** — read the `P1-T3` ADR first and flex all Phase 2 implementation detail to it. Task IDs/DoDs/tests are stable; framework/model/IR specifics are not.
-
-## Testing model (PRD §12B) — read before writing any test
-1. **Deterministic tests** — all non-AI behavior (parsing, IR, state machine, comment anchoring, version snapshot/restore, permissions, edit splicing mechanics, layout validation). Run in CI every commit.
-2. **Eval tests** — all LLM output (conversion fidelity, NL-edit semantics). Require golden dataset + rubric + LLM-as-judge scorer + thresholds. Regression suite: every real failure is added to the golden set. **NOT exact-string-equality unit tests.**
-3. **Manual/qualitative** — what no harness can judge (e.g. "do reviewers prefer the artifact over the Google Doc?"). Structured observation, documented. Mark explicitly.
-
-Rule: LLM-produced output → **eval test**, never assertion of exact equality.
-
-## Environment
-- Platform: Windows (win32), PowerShell. Use PS syntax (`$null`, `$env:VAR`, backtick line-continuation).
-- Git repo: remote `origin` = https://github.com/nirat25/viscollab (default branch `main`).
-- Stack: **undecided** — set by the `P1-T3` ADR. Do not assume a framework/model/storage/IR until that exists.
-- Spike (`spike/`) is Node/TS. **LLM provider is abstracted** (`spike/src/client.ts`): cheap OpenAI-compatible provider now (owner cost decision), Anthropic in production — swap via `LLM_PROVIDER` env, no code change.
-
-## Working conventions
-- Build exactly what the task asks (coding-standards: simplicity first, surgical changes).
-- When a task is ambiguous, resolve against tenets (§6), anti-scope (§7), decision log (Part 4) — then ask if still unclear.
-- North-star metric: **rate of decisions reversed/relitigated after sign-off** (lower = win). Baseline before any code ships (`P0-T5`).
+- **Phase 2 tasks were written before Phase 1 decisions exist** — read the `P1-T3` ADR first and flex all Phase 2 implementation detail to it. Task IDs/DoDs/tests are

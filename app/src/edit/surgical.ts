@@ -270,3 +270,7 @@ ${instruction}
 
   return finalHtml;
 }
+
+// Re-export pure endpoint helpers so htmlcollab-app/edit exposes them.
+export { validateEditRequest, validateLlmSectionResult, simulateEdit } from './editEndpointHelpers.js';
+export type { EditRequest, ValidationError } from './editEndpointHelpers.js';

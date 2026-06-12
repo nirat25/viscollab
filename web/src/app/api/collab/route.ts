@@ -320,17 +320,26 @@ const INITIAL_STATE = {
     "Alex": null,
     "Priya": null,
     "Nirat": null
-  }
+  },
+  notifications: []
 };
 
+// Keys that clients are allowed to partially update.
+// Any subset of these may be sent; missing keys are left unchanged.
+const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", "notifications"] as const;
+type MergeableKey = typeof MERGEABLE_KEYS[number];
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const documentId = searchParams.get("documentId") || undefined;
   let state = await getState(documentId);
   if (!state) {
-    state = INITIAL_STATE;
+    state = { ...INITIAL_STATE };
     await saveState(state, documentId);
+  }
+  // Back-fill notifications for legacy stored states that predate this field
+  if (!Array.isArray(state.notifications)) {
+    state.notifications = [];
   }
   return NextResponse.json(state);
 }
@@ -340,14 +349,49 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url);
     const documentId = searchParams.get("documentId") || undefined;
     const body = await request.json();
-    // Validate request has required structure
-    if (!body.versions || !body.activeVersionNum || !body.comments || !body.verdicts) {
-      return NextResponse.json({ error: "Invalid state structure" }, { status: 400 });
+
+    // -----------------------------------------------------------------------
+    // Determine whether this is a full-blob update or a partial update.
+    //
+    // Full-blob (backward compat): client sends ALL four core keys.
+    // Partial: client sends any non-empty subset of MERGEABLE_KEYS.
+    //
+    // The legacy validation required all four core keys to be present; we
+    // keep that contract for clients that send all four.  Partial sends
+    // (missing one or more) are now accepted and merged onto stored state.
+    // -----------------------------------------------------------------------
+
+    const coreKeys: MergeableKey[] = ["versions", "activeVersionNum", "comments", "verdicts"];
+    const sentKeys = MERGEABLE_KEYS.filter((k) => k in body);
+
+    if (sentKeys.length === 0) {
+      return NextResponse.json(
+        { error: "Body must include at least one of: " + MERGEABLE_KEYS.join(", ") },
+        { status: 400 }
+      );
     }
-    
-    // Save to db
-    await saveState(body, documentId);
-    return NextResponse.json({ success: true, state: body });
+
+    // Load existing state to merge into
+    let stored = await getState(documentId);
+    if (!stored) {
+      stored = { ...INITIAL_STATE };
+    }
+    // Back-fill notifications on legacy stored state
+    if (!Array.isArray(stored.notifications)) {
+      stored.notifications = [];
+    }
+
+    // Merge: only update keys that were sent in this request
+    const merged: Record<string, unknown> = { ...stored };
+    for (const key of sentKeys) {
+      merged[key] = body[key];
+    }
+
+    // Attach last-write metadata
+    merged["updatedAt"] = new Date().toISOString();
+
+    await saveState(merged, documentId);
+    return NextResponse.json({ success: true, state: merged });
   } catch (e) {
     return NextResponse.json({ error: "Failed to parse body" }, { status: 500 });
   }

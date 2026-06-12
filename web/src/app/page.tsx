@@ -8,14 +8,15 @@ import {
 } from "lucide-react";
 import { diff_match_patch } from "diff-match-patch";
 
-import { 
-  canView, 
-  canComment, 
+import {
+  canView,
+  canComment,
   canEdit,
   locate,
   type Comment,
   type Reply
 } from "htmlcollab-app/collab";
+import DocumentSurface, { type PendingSelection } from "../components/DocumentSurface";
 
 // Token mapping has been moved to API server.
 const INITIAL_HTML = `
@@ -338,13 +339,13 @@ const TOUR_STEPS: TourStepConfig[] = [
   {
     targetId: "tour-center-preview",
     title: "Interactive Document Preview",
-    description: "Read documents, select text to leave inline comments, and view version histories.",
+    description: "Read the artifact, then select any text to pop up a Comment button — your comment is anchored to that exact passage and stays highlighted as the document evolves. Click a highlight to jump to its thread.",
     position: "bottom"
   },
   {
     targetId: "tour-section-tools",
     title: "Block & AI Sandbox Tools",
-    description: "Hover over any document block to highlight it, and click to open the AI Sandbox to rewrite sections.",
+    description: "Hover a block to reveal a small toolbar in its top-right: comment on the whole section, or open the AI Sandbox to surgically rewrite just that block (with a diff preview before you commit).",
     position: "right"
   },
   {
@@ -409,8 +410,8 @@ export default function Home() {
   const [selectedText, setSelectedText] = useState("");
   const [selectedRange, setSelectedRange] = useState<{ quote: string; prefix: string; suffix: string } | null>(null);
 
-  // Reply Form state
-  const [replyText, setReplyText] = useState("");
+  // Reply Form state — keyed per comment so threads don't share one buffer.
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   // AI Sandbox state
   const [sandboxSectionId, setSandboxSectionId] = useState<string | null>(null);
@@ -418,9 +419,11 @@ export default function Home() {
   const [sandboxSimulatedHtml, setSandboxSimulatedHtml] = useState<string | null>(null);
   const [sandboxDiffHtml, setSandboxDiffHtml] = useState<string | null>(null);
   const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxIsSimulated, setSandboxIsSimulated] = useState(false);
+  const [sandboxError, setSandboxError] = useState("");
 
-  // Document root ref for dynamic location
-  const documentRootRef = useRef<HTMLDivElement>(null);
+  // Scroll container for the document review surface (owned here for in-page
+  // anchor scrolling; the artifact DOM itself is owned by DocumentSurface).
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // Convert Document Modal states
@@ -687,28 +690,50 @@ export default function Home() {
 
   }, []);
 
-  // Poll state from server
+  // Poll state from server.
+  //
+  // Critical: the poll must NOT clobber in-progress UI. It (a) skips entirely
+  // while the comment composer or AI sandbox is open, (b) only setState when the
+  // server payload meaningfully differs (volatile fields stripped), and (c)
+  // never touches selection / scroll / <details> open-state (those live in the
+  // DOM / DocumentSurface, not in the polled state).
+  //
+  // Latest mutable values are read through a ref so the interval doesn't need to
+  // be torn down and recreated on every state change (which previously caused a
+  // near-constant re-subscribe + re-render storm).
+  const pollSnapshotRef = useRef({ documentVersions, activeVersionNum, comments, verdicts });
+  useEffect(() => {
+    pollSnapshotRef.current = { documentVersions, activeVersionNum, comments, verdicts };
+  }, [documentVersions, activeVersionNum, comments, verdicts]);
+
+  const pollPausedRef = useRef(false);
+  useEffect(() => {
+    pollPausedRef.current = !!sandboxSectionId || isAddingComment;
+  }, [sandboxSectionId, isAddingComment]);
+
   useEffect(() => {
     if (!mounted || !authToken || !activeDocumentId) return;
 
     let isSubscribed = true;
     const interval = setInterval(() => {
+      // Don't pull server state out from under an open composer / sandbox.
+      if (pollPausedRef.current) return;
+
       fetch(`/api/collab?documentId=${activeDocumentId}`)
         .then((res) => res.json())
         .then((data) => {
-          if (!isSubscribed) return;
-          if (data.versions && JSON.stringify(data.versions) !== JSON.stringify(documentVersions)) {
+          if (!isSubscribed || pollPausedRef.current) return;
+          const snap = pollSnapshotRef.current;
+          if (data.versions && JSON.stringify(data.versions) !== JSON.stringify(snap.documentVersions)) {
             setDocumentVersions(data.versions);
           }
-          if (data.activeVersionNum !== undefined && data.activeVersionNum !== activeVersionNum) {
-            if (!sandboxSectionId) {
-              setActiveVersionNum(data.activeVersionNum);
-            }
+          if (data.activeVersionNum !== undefined && data.activeVersionNum !== snap.activeVersionNum) {
+            setActiveVersionNum(data.activeVersionNum);
           }
-          if (data.comments && JSON.stringify(data.comments) !== JSON.stringify(comments)) {
+          if (data.comments && JSON.stringify(data.comments) !== JSON.stringify(snap.comments)) {
             setComments(data.comments);
           }
-          if (data.verdicts && JSON.stringify(data.verdicts) !== JSON.stringify(verdicts)) {
+          if (data.verdicts && JSON.stringify(data.verdicts) !== JSON.stringify(snap.verdicts)) {
             setVerdicts(data.verdicts);
           }
         })
@@ -721,7 +746,7 @@ export default function Home() {
       isSubscribed = false;
       clearInterval(interval);
     };
-  }, [mounted, authToken, activeDocumentId, documentVersions, activeVersionNum, comments, verdicts, sandboxSectionId]);
+  }, [mounted, authToken, activeDocumentId]);
 
   // Auth handlers
   const handleSignIn = async (e: React.FormEvent) => {
@@ -872,102 +897,25 @@ export default function Home() {
     return sectionsMetadata.map(m => m.id);
   }, [sectionsMetadata]);
 
-  // Bounding box calculation for sections to position inline actions
-  const [sectionRects, setSectionRects] = useState<Record<string, { top: number; height: number }>>({});
-
-  const recalculateRects = React.useCallback(() => {
-    const newRects: Record<string, { top: number; height: number }> = {};
-    const container = documentRootRef.current;
-    if (container) {
-      const containerRect = container.getBoundingClientRect();
-      sectionIds.forEach((secId) => {
-        const el = document.getElementById(secId);
-        if (el) {
-          const rect = el.getBoundingClientRect();
-          newRects[secId] = {
-            top: rect.top - containerRect.top,
-            height: rect.height
-          };
-        }
-      });
-    }
-    setSectionRects(newRects);
-  }, [sectionIds]);
-
-  useEffect(() => {
-    if (!mounted || !currentVersion.html) return;
-    recalculateRects();
-    const timer = setTimeout(recalculateRects, 150);
-    
-    window.addEventListener("resize", recalculateRects);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("resize", recalculateRects);
-    };
-  }, [currentVersion.html, sectionIds, mounted, activeDocumentId, activeVersionNum, recalculateRects, currentUser]);
-
-  // Hovering block actions states
-  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
-  const [hoveredElRect, setHoveredElRect] = useState<{ top: number; left: number; height: number } | null>(null);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest(".surgical-tool-card")) {
-      return;
-    }
-    if (target.closest("[data-section-toolbar]")) {
-      return;
-    }
-    const sectionEl = target.closest("[id]");
-    if (sectionEl) {
-      const id = sectionEl.getAttribute("id");
-      if (id && id !== "top" && sectionIds.includes(id)) {
-        setHoveredSectionId(id);
-        const container = documentRootRef.current;
-        if (container) {
-          const containerRect = container.getBoundingClientRect();
-          const rect = sectionEl.getBoundingClientRect();
-          setHoveredElRect({
-            top: rect.top - containerRect.top,
-            left: rect.left - containerRect.left,
-            height: rect.height
-          });
-        }
-        return;
-      }
-    }
-    setHoveredSectionId(null);
-    setHoveredElRect(null);
-  };
-
-  // Detect text selection inside a section
-  const handleSelection = (sectionId: string) => {
+  // Text-selection comment: DocumentSurface computes a cross-node-safe
+  // {quote, prefix, suffix} from the Range and hands it back here. We open the
+  // composer pre-filled. (Hover, highlighting, and selection geometry all live
+  // inside DocumentSurface now — no per-mousemove React state in the parent.)
+  const handleCommentSelection = React.useCallback((sel: PendingSelection) => {
     if (!currentUser || !canComment(currentUser.role)) return;
+    setSelectedText(sel.quote);
+    setSelectedRange({ quote: sel.quote, prefix: sel.prefix, suffix: sel.suffix });
+    setCommentTargetSection(sel.sectionId);
+    setIsAddingComment(true);
+  }, [currentUser]);
 
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    
-    const range = selection.getRangeAt(0);
-    const quote = range.toString().trim();
-    if (!quote) return;
-
-    // Verify selection is indeed inside this section
-    const sectionEl = document.getElementById(sectionId);
-    if (!sectionEl || !sectionEl.contains(range.commonAncestorContainer)) return;
-
-    const fullText = sectionEl.textContent || "";
-    const startIndex = fullText.indexOf(quote);
-
-    if (startIndex !== -1) {
-      const prefix = fullText.slice(Math.max(0, startIndex - 30), startIndex);
-      const suffix = fullText.slice(startIndex + quote.length, startIndex + quote.length + 30);
-      
-      setSelectedText(quote);
-      setSelectedRange({ quote, prefix, suffix });
-      setCommentTargetSection(sectionId);
-      setIsAddingComment(true);
-    }
-  };
+  // Whole-section comment via the hover toolbar button.
+  const handleCommentSection = React.useCallback((sectionId: string) => {
+    setSelectedText("");
+    setSelectedRange(null);
+    setCommentTargetSection(sectionId);
+    setIsAddingComment(true);
+  }, []);
 
   // Add Comment Submission
   const handleAddComment = (e: React.FormEvent) => {
@@ -1030,7 +978,8 @@ export default function Home() {
   // Add Reply Submission
   const handleAddReply = (e: React.FormEvent, commentId: string) => {
     e.preventDefault();
-    if (!replyText.trim() || !currentUser) return;
+    const draft = (replyDrafts[commentId] || "").trim();
+    if (!draft || !currentUser) return;
 
     const updatedComments = comments.map(c => {
       if (c.id === commentId) {
@@ -1038,7 +987,7 @@ export default function Home() {
         const newReply: Reply = {
           id: replyId,
           author: currentUser.name,
-          body: replyText,
+          body: draft,
           mentions: [],
           ts: Date.now()
         };
@@ -1053,7 +1002,7 @@ export default function Home() {
 
     setComments(updatedComments);
     syncState(documentVersions, activeVersionNum, updatedComments, verdicts);
-    setReplyText("");
+    setReplyDrafts(prev => ({ ...prev, [commentId]: "" }));
   };
 
   // Resolve Comment
@@ -1087,6 +1036,8 @@ export default function Home() {
     setSandboxPrompt("");
     setSandboxSimulatedHtml(null);
     setSandboxDiffHtml(null);
+    setSandboxIsSimulated(false);
+    setSandboxError("");
   };
 
   const PRESETS = [
@@ -1096,93 +1047,40 @@ export default function Home() {
     { label: "Add HIPAA / Compliance Details", prompt: "Add details about data encryption, secure audit trails, and HIPAA compliance requirements." }
   ];
 
-  const handleSimulateAiEdit = () => {
+  const handleSimulateAiEdit = async () => {
     if (!sandboxSectionId) return;
     setSandboxLoading(true);
+    setSandboxError("");
 
-    // Fetch existing section content
+    // Fetch existing section content from the active version.
     const parser = new DOMParser();
     const doc = parser.parseFromString(currentVersion.html, "text/html");
     const sectionEl = doc.getElementById(sandboxSectionId);
     const oldSectionHtml = sectionEl ? sectionEl.outerHTML : "";
 
-    setTimeout(() => {
-      // Simulated response mapping
-      let newSectionHtml = "";
-      const lowercasePrompt = sandboxPrompt.toLowerCase();
-
-      if (sandboxSectionId === "intro") {
-        if (lowercasePrompt.includes("professional") || lowercasePrompt.includes("executive") || lowercasePrompt.includes("polish")) {
-          newSectionHtml = `<section id="intro" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">1. Executive Summary & Context</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    DentalTechHub represents our flagship enterprise solution for modern dental practices. By seamlessly unifying patient scheduling, insurance claims processing, and clinical treatment workflows, the platform addresses critical administrative inefficiencies. Our projections show a conservative 30% reduction in operational overhead while significantly elevating patient experience.
-  </p>
-</section>`;
-        } else if (lowercasePrompt.includes("concise") || lowercasePrompt.includes("short")) {
-          newSectionHtml = `<section id="intro" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">1. Executive Summary & Context</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    DentalTechHub is an all-in-one dental practice management platform. It integrates scheduling, billing, and treatment planning to cut administrative overhead by 30%.
-  </p>
-</section>`;
-        } else {
-          newSectionHtml = `<section id="intro" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">1. Executive Summary & Context</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    DentalTechHub is a modern software platform for dental clinics. It integrates patient scheduling, insurance claims processing, and treatment planning into a single, intuitive interface. Our primary target is to reduce administrative overhead by 30% and improve patient engagement. [Added: ${sandboxPrompt}]
-  </p>
-</section>`;
-        }
-      } else if (sandboxSectionId === "goals") {
-        if (lowercasePrompt.includes("metric") || lowercasePrompt.includes("target")) {
-          newSectionHtml = `<section id="goals" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">2. Targets & Core Metrics</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    We aim to onboard 500 active dental clinics across the country by Q4, reaching a milestone of 10,000 active daily users. The key metrics include active daily clinic users, average insurance claim processing time (targeted under 2 hours), and patient satisfaction scores. We will also monitor server latency and API reliability.
-  </p>
-</section>`;
-        } else {
-          newSectionHtml = `<section id="goals" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">2. Targets & Core Metrics</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    We aim to onboard 500 active dental clinics across the country by Q4. The key metrics include active daily clinic users, average insurance claim processing time, and patient satisfaction scores. [AI Edit: ${sandboxPrompt}]
-  </p>
-</section>`;
-        }
-      } else if (sandboxSectionId === "security") {
-        if (lowercasePrompt.includes("hipaa") || lowercasePrompt.includes("compliance") || lowercasePrompt.includes("encrypt")) {
-          newSectionHtml = `<section id="security" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">4. Security & HIPAA Compliance</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    All patient health records must be encrypted both in transit and at rest. The platform must fully comply with all HIPAA regulations, including rigorous audit logging, secure access controls, and signed Business Associate Agreements (BAAs). We will undergo external security penetration testing and audits twice a year to maintain compliance.
-  </p>
-</section>`;
-        } else {
-          newSectionHtml = `<section id="security" class="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-indigo-150 transition-all duration-200">
-  <h2 class="text-xl font-semibold text-slate-900 mb-2 font-display">4. Security & HIPAA Compliance</h2>
-  <p class="text-slate-600 leading-relaxed font-sans">
-    All patient health records must be encrypted both in transit and at rest. The platform must fully comply with all HIPAA regulations. [AI Edit: ${sandboxPrompt}]
-  </p>
-</section>`;
-        }
-      } else if (sandboxSectionId === "background") {
-        newSectionHtml = oldSectionHtml
-          .replace("analytics", "advanced analytics")
-          .replace("redundancy", "inefficiency");
-      } else {
-        let updated = oldSectionHtml;
-        if (updated.includes("Vendor") || updated.includes("vendor")) {
-          updated = updated.replace(/Vendor/g, "Provider").replace(/vendor/g, "provider");
-        } else {
-          updated = updated.replace(/the/gi, "the updated");
-        }
-        newSectionHtml = updated;
+    try {
+      const res = await fetch("/api/collab/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: activeDocumentId,
+          sectionId: sandboxSectionId,
+          sectionHtml: oldSectionHtml,
+          instruction: sandboxPrompt,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || typeof data.html !== "string") {
+        setSandboxError(data.error || "AI edit failed.");
+        setSandboxLoading(false);
+        return;
       }
 
+      const newSectionHtml = data.html;
       setSandboxSimulatedHtml(newSectionHtml);
+      setSandboxIsSimulated(!!data.simulated);
 
-      // Compute inline diff preview using diff-match-patch
+      // Compute inline diff preview using diff-match-patch.
       const dmp = new diff_match_patch();
       const diffs = dmp.diff_main(oldSectionHtml, newSectionHtml);
       dmp.diff_cleanupSemantic(diffs);
@@ -1205,8 +1103,11 @@ export default function Home() {
         }
       }
       setSandboxDiffHtml(diffMarkup);
+    } catch (err: any) {
+      setSandboxError(err?.message || "Network error during AI edit.");
+    } finally {
       setSandboxLoading(false);
-    }, 800);
+    }
   };
 
   const handleCommitAiEdit = () => {
@@ -1337,99 +1238,18 @@ export default function Home() {
     return Array.from(list);
   };
 
-  // Highlight comments in DOM dynamically
-  const getHighlightedHtml = () => {
-    if (!mounted || typeof window === "undefined") return currentVersion.html;
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(currentVersion.html, "text/html");
-    const container = doc.body;
-
-    comments.forEach(c => {
-      if (c.lifecycle === "resolved") return;
-      if (c.target.type === "text") {
-        const quote = c.target.quote;
-        
-        // Find sections
-        const walk = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-        let textNode;
-        while ((textNode = walk.nextNode())) {
-          const text = textNode.nodeValue || "";
-          const idx = text.indexOf(quote);
-          if (idx !== -1 && textNode.parentNode) {
-            const parent = textNode.parentNode as HTMLElement;
-            // Ensure we aren't editing inside script or existing highlight
-            if (parent.tagName === "MARK" || parent.tagName === "SCRIPT" || parent.tagName === "STYLE") continue;
-
-            const before = text.slice(0, idx);
-            const after = text.slice(idx + quote.length);
-            
-            const beforeNode = doc.createTextNode(before);
-            const mark = doc.createElement("mark");
-            mark.className = `cursor-pointer transition-colors px-0.5 rounded-sm border-b-2 font-medium ${
-              selectedCommentId === c.id 
-                ? "bg-indigo-200 border-indigo-500 text-indigo-900 shadow-sm" 
-                : "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200"
-            }`;
-            mark.setAttribute("data-comment-id", c.id);
-            mark.textContent = quote;
-            const afterNode = doc.createTextNode(after);
-            
-            const parentNode = textNode.parentNode;
-            if (parentNode) {
-              parentNode.insertBefore(beforeNode, textNode);
-              parentNode.insertBefore(mark, textNode);
-              parentNode.insertBefore(afterNode, textNode);
-              parentNode.removeChild(textNode);
-            }
-            break;
-          }
-        }
-      }
-    });
-
-    return container.innerHTML;
-  };
-
-  const handleDocumentClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const anchor = target.closest("a");
-    if (anchor) {
-      const href = anchor.getAttribute("href");
-      if (href && href.startsWith("#")) {
-        e.preventDefault();
-        const targetId = href.slice(1);
-        if (previewContainerRef.current) {
-          const container = previewContainerRef.current;
-          if (targetId === "top") {
-            container.scrollTo({ top: 0, behavior: "smooth" });
-          } else {
-            const targetEl = document.getElementById(targetId);
-            if (targetEl) {
-              const containerRect = container.getBoundingClientRect();
-              const targetRect = targetEl.getBoundingClientRect();
-              const scrollOffset = targetRect.top - containerRect.top + container.scrollTop;
-              container.scrollTo({ top: scrollOffset, behavior: "smooth" });
-            }
-          }
-        }
-        return;
-      }
+  // Comment highlighting (CSS Custom Highlight API), in-page anchor scrolling,
+  // and highlight hit-testing all live in DocumentSurface now. When a
+  // highlighted range / element is clicked, DocumentSurface calls this to focus
+  // the matching thread in the sidebar.
+  const handleSelectComment = React.useCallback((commentId: string) => {
+    setSelectedCommentId(commentId);
+    setActiveTab("threads");
+    const element = document.getElementById(`sidebar-comment-${commentId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-
-    const mark = target.closest("mark");
-    if (mark) {
-      const commentId = mark.getAttribute("data-comment-id");
-      if (commentId) {
-        setSelectedCommentId(commentId);
-        setActiveTab("threads");
-        const element = document.getElementById(`sidebar-comment-${commentId}`);
-        if (element) {
-          element.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }
-      }
-    }
-  };
+  }, []);
 
   // If not hydrated yet
   if (!mounted) {
@@ -1936,102 +1756,31 @@ export default function Home() {
             </div>
 
             {/* Document Review Body */}
-            <div 
+            <div
               ref={previewContainerRef}
               className="pane-preview-body"
-              onMouseMove={handleMouseMove}
-              onMouseLeave={() => {
-                setHoveredSectionId(null);
-                setHoveredElRect(null);
-              }}
-              onScroll={recalculateRects}
             >
-              {hoveredSectionId && (
-                <style>{`
-                  #${hoveredSectionId} {
-                    border-left: 3px solid #6366f1 !important;
-                    background-color: rgba(99, 102, 241, 0.02) !important;
-                    padding-left: 8px !important;
-                  }
-                `}</style>
+              {currentVersion.html.includes("id=") ? (
+                <DocumentSurface
+                  docId={activeDocumentId}
+                  versionNumber={activeVersionNum}
+                  html={currentVersion.html}
+                  isDraft={currentVersion.status === "Draft"}
+                  comments={comments}
+                  sectionsMetadata={sectionsMetadata}
+                  sectionIds={sectionIds}
+                  selectedCommentId={selectedCommentId}
+                  canEdit={canEdit(currentUser.role)}
+                  canComment={canComment(currentUser.role)}
+                  previewContainerRef={previewContainerRef}
+                  onSelectComment={handleSelectComment}
+                  onOpenAiEdit={handleOpenAiEdit}
+                  onCommentSection={handleCommentSection}
+                  onCommentSelection={handleCommentSelection}
+                />
+              ) : (
+                <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
               )}
-              
-              <div 
-                ref={documentRootRef}
-                className="space-y-6 select-text"
-                onClick={(e) => {
-                  handleDocumentClick(e);
-                  setTimeout(recalculateRects, 100);
-                }}
-              >
-                {/* Dynamically parsed sections from HTML */}
-                {currentVersion.html.includes("id=") ? (
-                  <div 
-                    dangerouslySetInnerHTML={{ __html: getHighlightedHtml() }} 
-                    className="relative cursor-text"
-                    onMouseUp={() => {
-                      // Handled selection per section
-                    }}
-                  />
-                ) : (
-                  <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
-                )}
-              </div>
-
-              {/* Floating Inline Block Tools Overlay */}
-              {sectionIds.map((secId) => {
-                const rect = sectionRects[secId];
-                if (!rect) return null;
-                const isHovered = hoveredSectionId === secId;
-                if (!isHovered) return null;
-                const sectionMeta = sectionsMetadata.find(m => m.id === secId);
-                return (
-                  <div 
-                    key={secId}
-                    data-section-toolbar={secId}
-                    className="absolute right-4 md:right-6 bg-white/95 backdrop-blur-md border border-indigo-100 shadow-lg rounded-xl p-1 z-40 flex items-center gap-1.5 ring-1 ring-indigo-500/20 animate-toolbar-fade-in"
-                    style={{
-                      top: rect.top + 6,
-                    }}
-                  >
-                    <div className="flex items-center gap-1 border-r border-slate-150 pr-1.5 pl-1">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 px-1.5 py-0.5 rounded-md truncate max-w-[80px] xs:max-w-[100px] sm:max-w-[140px]" title={sectionMeta?.title || secId}>
-                        {sectionMeta?.title || secId}
-                      </span>
-                    </div>
-                    
-                    <div className="flex gap-1">
-                      {canEdit(currentUser.role) && currentVersion.status === "Draft" && (
-                        <button
-                          onClick={() => handleOpenAiEdit(secId)}
-                          data-testid={`ai-edit-btn-${secId}`}
-                          className="flex items-center gap-1.5 py-1 px-2.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg text-[10px] font-bold transition-all whitespace-nowrap cursor-pointer"
-                          title="Surgical AI Edit"
-                        >
-                          <Sparkles className="h-3 w-3 shrink-0" />
-                          <span>AI Edit</span>
-                        </button>
-                      )}
-                      {canComment(currentUser.role) && (
-                        <button
-                          onClick={() => {
-                            setSelectedText("");
-                            setSelectedRange(null);
-                            setCommentTargetSection(secId);
-                            setIsAddingComment(true);
-                          }}
-                          data-testid={`comment-btn-${secId}`}
-                          className="flex items-center gap-1 py-1 px-2.5 bg-slate-50 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition-all border border-slate-200/50 whitespace-nowrap cursor-pointer"
-                          title="Comment on section"
-                        >
-                          <MessageSquare className="h-3 w-3 shrink-0" />
-                          <span>Comment</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
 
               {/* Surgical Block Guide & Panel */}
               <div 
@@ -2255,8 +2004,8 @@ export default function Home() {
                                 type="text"
                                 className="flex-1 p-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
                                 placeholder="Type reply..."
-                                value={replyText}
-                                onChange={(e) => setReplyText(e.target.value)}
+                                value={replyDrafts[comment.id] || ""}
+                                onChange={(e) => setReplyDrafts(prev => ({ ...prev, [comment.id]: e.target.value }))}
                               />
                               <button
                                 type="submit"
@@ -2447,17 +2196,36 @@ export default function Home() {
                   ) : (
                     <>
                       <Sparkles className="h-3.5 w-3.5" />
-                      Simulate LLM Edit
+                      Generate AI Edit
                     </>
                   )}
                 </button>
               </div>
 
+              {/* Error */}
+              {sandboxError && (
+                <div className="bg-red-50 text-red-700 text-xs px-4 py-3 rounded-xl border border-red-100 flex items-start gap-2 animate-fade-in">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{sandboxError}</span>
+                </div>
+              )}
+
               {/* Diff Preview */}
               {sandboxDiffHtml && (
                 <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Unified Inline Diff Preview</span>
-                  <div 
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Unified Inline Diff Preview</span>
+                    {sandboxIsSimulated && (
+                      <span
+                        data-testid="ai-simulated-badge"
+                        className="text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full"
+                        title="No LLM API key configured — this edit is a deterministic simulation."
+                      >
+                        Simulated (no API key)
+                      </span>
+                    )}
+                  </div>
+                  <div
                     data-testid="diff-preview"
                     className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs leading-relaxed font-sans overflow-x-auto max-h-40"
                     dangerouslySetInnerHTML={{ __html: sandboxDiffHtml }}

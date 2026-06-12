@@ -12,3 +12,6 @@ spike/results/
 # OS
 Thumbs.db
 .DS_Store
+
+# build output
+app/dist/

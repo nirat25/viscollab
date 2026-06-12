@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./dist/collab/index.js",
+  "types": "./dist/collab/index.d.ts",
+  "exports": {
+    "./collab": "./dist/collab/index.js",
+    "./edit": "./dist/edit/surgical.js",
+    "./render": "./dist/render/renderer.js",
+    "./convert": "./dist/convert/index.js",
+    "./pipeline": "./dist/pipeline.js"
+  },
   "description": "HTMLCollab MVP — ingestion layer (P2-T1). Accepts .docx upload and GDoc HTML paste; produces TipTap-compatible JSON AST IR.",
   "scripts": {
     "test": "vitest run",

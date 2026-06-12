@@ -10,7 +10,10 @@ test.describe('Challenger - Disambiguation Teleportation edge case', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto(filePath);
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem('collab-token', 'token-collaborator');
+    });
     await page.goto(filePath);
   });
 

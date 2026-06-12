@@ -13,6 +13,7 @@ test.describe('HTMLCollab MVP - Milestone 2 Polish', () => {
     await page.goto(filePath);
     await page.evaluate(() => {
       localStorage.clear();
+      localStorage.setItem('collab-token', 'token-collaborator');
     });
     await page.goto(filePath);
   });

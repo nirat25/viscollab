@@ -16,6 +16,7 @@ import { RENDER_SPEC } from "./template.js";
 import { complete, getModel } from "./client.js";
 import { tipTapDocToPromptText } from "./ir-to-text.js";
 import { validateContract, type ContractResult } from "./template.js";
+import { validateDisclosure, type DisclosureResult } from "../render/renderer.js";
 import { ProgressReporter, silentReporter } from "./progress.js";
 import type { TipTapDoc } from "../ir.js";
 
@@ -30,6 +31,8 @@ export interface ConversionResult {
   html: string;
   /** Structural safety + comprehension signals. */
   contract: ContractResult;
+  /** Progressive disclosure DoD validation (P2-T3). */
+  disclosure: DisclosureResult;
   /** Prompt version tag for regression tracking. */
   promptVersion: string;
   /** Actual model used. */
@@ -104,11 +107,15 @@ export async function convertIR(
   progress.report("validating", "Checking structural contract…");
   const contract = validateContract(html);
 
-  progress.report("done", `Done. Contract: ${contract.valid ? "OK" : "FAILED"}`);
+  progress.report("validating", "Checking progressive disclosure…");
+  const disclosure = validateDisclosure(html);
+
+  progress.report("done", `Done. Contract: ${contract.valid ? "OK" : "FAILED"}, Disclosure: ${disclosure.valid ? "OK" : "FAILED"}`);
 
   return {
     html,
     contract,
+    disclosure,
     promptVersion: PROMPT_VERSION,
     model: getModel("convert"),
     sourceFile: doc.sourceFile,

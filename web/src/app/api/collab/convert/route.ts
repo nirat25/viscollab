@@ -6,6 +6,7 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") || "";
     let htmlResult = "";
     let fileName = "uploaded-doc";
+    let warnings: string[] = [];
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
         fileName
       });
       htmlResult = pipelineResult.html;
+      if (pipelineResult.disclosure && pipelineResult.disclosure.warnings) {
+        warnings = pipelineResult.disclosure.warnings;
+      }
     } else if (contentType.includes("application/json")) {
       const body = await request.json();
       if (!body.gdocHtml) {
@@ -37,14 +41,22 @@ export async function POST(request: Request) {
         fileName
       });
       htmlResult = pipelineResult.html;
+      if (pipelineResult.disclosure && pipelineResult.disclosure.warnings) {
+        warnings = pipelineResult.disclosure.warnings;
+      }
     } else {
       return NextResponse.json({ error: "Unsupported content type" }, { status: 400 });
+    }
+
+    if (warnings.length > 0) {
+      console.warn(`[Pipeline Warnings for ${fileName}]:`, warnings);
     }
 
     return NextResponse.json({
       success: true,
       fileName,
-      html: htmlResult
+      html: htmlResult,
+      warnings
     });
   } catch (e: any) {
     console.error("Pipeline conversion error", e);

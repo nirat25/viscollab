@@ -184,10 +184,17 @@ export function semanticHtmlToDoc(
   cleanHtml: string,
   sourceFile: string
 ): TipTapDoc {
+  let content: BlockNode[] = [];
+  try {
+    content = htmlToTipTapBlocks(cleanHtml);
+  } catch (err) {
+    throw new Error(`AST mapping failed for ${sourceFile}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return {
     type: "doc",
     sourceFile,
     docType: "auto",
-    content: htmlToTipTapBlocks(cleanHtml),
+    content,
   };
 }

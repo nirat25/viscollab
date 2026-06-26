@@ -40,6 +40,10 @@ export interface DocumentSurfaceProps {
   onCommentSection: (sectionId: string) => void;
   /** Text-selection comment: opens composer pre-filled with the quote. */
   onCommentSelection: (sel: PendingSelection) => void;
+  /** Locked sections */
+  lockedSections: string[];
+  /** Toggle section lock */
+  onToggleLock: (sectionId: string) => void;
 }
 
 /* ---- cross-node text math (mirrors comments.ts model) ---- */
@@ -109,6 +113,8 @@ export default function DocumentSurface({
   onOpenAiEdit,
   onCommentSection,
   onCommentSelection,
+  lockedSections,
+  onToggleLock,
 }: DocumentSurfaceProps) {
   const artRef = useRef<HTMLDivElement>(null);
 
@@ -549,8 +555,10 @@ export default function DocumentSurface({
           canEdit={canEdit}
           canComment={canComment}
           isDraft={isDraft}
+          isLocked={lockedSections.includes(hoveredSectionId)}
           onAiEdit={onOpenAiEdit}
           onComment={onCommentSection}
+          onToggleLock={onToggleLock}
         />
       )}
 

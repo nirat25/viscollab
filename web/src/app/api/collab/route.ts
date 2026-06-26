@@ -321,12 +321,13 @@ const INITIAL_STATE = {
     "Priya": null,
     "Nirat": null
   },
-  notifications: []
+  notifications: [],
+  lockedSections: []
 };
 
 // Keys that clients are allowed to partially update.
 // Any subset of these may be sent; missing keys are left unchanged.
-const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", "notifications"] as const;
+const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", "notifications", "lockedSections"] as const;
 type MergeableKey = typeof MERGEABLE_KEYS[number];
 
 export async function GET(request: Request) {
@@ -337,9 +338,12 @@ export async function GET(request: Request) {
     state = { ...INITIAL_STATE };
     await saveState(state, documentId);
   }
-  // Back-fill notifications for legacy stored states that predate this field
+  // Back-fill notifications and lockedSections for legacy stored states
   if (!Array.isArray(state.notifications)) {
     state.notifications = [];
+  }
+  if (!Array.isArray(state.lockedSections)) {
+    state.lockedSections = [];
   }
   return NextResponse.json(state);
 }

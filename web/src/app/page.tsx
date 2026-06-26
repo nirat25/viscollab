@@ -432,6 +432,7 @@ export default function Home() {
   const [docxFile, setDocxFile] = useState<File | null>(null);
   const [pasteHtml, setPasteHtml] = useState("");
   const [isConverting, setIsConverting] = useState(false);
+  const [conversionStep, setConversionStep] = useState(0);
   const [convertError, setConvertError] = useState("");
 
   const fetchDocuments = async () => {
@@ -446,6 +447,8 @@ export default function Home() {
     }
   };
 
+  const [lockedSections, setLockedSections] = useState<string[]>([]);
+
   const loadDocumentState = async (docId: string) => {
     try {
       const res = await fetch(`/api/collab?documentId=${docId}`);
@@ -454,6 +457,7 @@ export default function Home() {
       if (data.activeVersionNum) setActiveVersionNum(data.activeVersionNum);
       if (data.comments) setComments(data.comments);
       if (data.verdicts) setVerdicts(data.verdicts);
+      if (data.lockedSections) setLockedSections(data.lockedSections);
       setSandboxSectionId(null);
       setSandboxSimulatedHtml(null);
       setSandboxDiffHtml(null);
@@ -486,6 +490,22 @@ export default function Home() {
     loadDocumentState(activeDocumentId);
   }, [activeDocumentId, mounted, authToken]);
 
+  useEffect(() => {
+    let timer1: NodeJS.Timeout;
+    let timer2: NodeJS.Timeout;
+    if (isConverting) {
+      // Simulate pipeline progression
+      timer1 = setTimeout(() => setConversionStep(1), 1200); // 1.2s: Ingest complete -> LLM
+      timer2 = setTimeout(() => setConversionStep(2), 6000); // 6s: LLM likely done -> Validation
+    } else {
+      setConversionStep(0);
+    }
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [isConverting]);
+
   const handleCreateDocSubmit = async () => {
     if (!newDocName.trim() || !newDocHtml.trim()) return;
     setNewDocError("");
@@ -517,6 +537,7 @@ export default function Home() {
 
   const handleConvertSubmit = async () => {
     setIsConverting(true);
+    setConversionStep(0);
     setConvertError("");
     try {
       let response;
@@ -1170,6 +1191,25 @@ export default function Home() {
   };
 
   // Document Verdict Change
+  const handleToggleSectionLock = async (sectionId: string) => {
+    const isLocked = lockedSections.includes(sectionId);
+    const updatedLocks = isLocked 
+      ? lockedSections.filter(id => id !== sectionId)
+      : [...lockedSections, sectionId];
+
+    setLockedSections(updatedLocks);
+
+    try {
+      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lockedSections: updatedLocks })
+      });
+    } catch (err) {
+      console.error("Failed to save locked sections", err);
+    }
+  };
+
   const handleVerdictChange = (val: "approve" | "changes" | "block" | null) => {
     if (!currentUser) return;
     const newVerdicts = {
@@ -1205,6 +1245,32 @@ export default function Home() {
     setDocumentVersions(newVersions);
     setActiveVersionNum(nextVersionNum);
     syncState(newVersions, nextVersionNum, comments, verdicts);
+  };
+
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const handleRegenerateDraft = async () => {
+    if (currentVersion.status !== "Draft") return;
+    setIsRegenerating(true);
+    try {
+      const res = await fetch("/api/collab/regenerate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: activeDocumentId,
+          lockedIds: lockedSections
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadDocumentState(activeDocumentId);
+      } else {
+        alert("Failed to regenerate: " + data.error);
+      }
+    } catch (err) {
+      console.error("Failed to regenerate draft", err);
+    } finally {
+      setIsRegenerating(false);
+    }
   };
 
   // Sidebar List Calculations
@@ -1362,6 +1428,50 @@ export default function Home() {
                 >
                   Sign In
                 </button>
+              </div>
+
+              {/* Mock Identities for testing */}
+              <div className="mt-4 pt-4 border-t border-slate-200/60">
+                <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
+                  Or mock login as:
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setUsernameInput("alex");
+                      setPasswordInput("password");
+                      // Slight delay to allow state to settle, though technically
+                      // we should pass directly to handleSignIn but the event object
+                      // requires standard form structure. We can just simulate it:
+                      setTimeout(() => {
+                        e.preventDefault();
+                        const formEvent = { preventDefault: () => {} } as any;
+                        handleSignIn(formEvent);
+                      }, 50);
+                    }}
+                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <User className="h-3 w-3 text-indigo-500" />
+                    Reader (Alex)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setUsernameInput("nirat");
+                      setPasswordInput("password");
+                      setTimeout(() => {
+                        e.preventDefault();
+                        const formEvent = { preventDefault: () => {} } as any;
+                        handleSignIn(formEvent);
+                      }, 50);
+                    }}
+                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <User className="h-3 w-3 text-emerald-500" />
+                    Author (Nirat)
+                  </button>
+                </div>
               </div>
             </form>
           ) : (
@@ -1738,12 +1848,22 @@ export default function Home() {
               {canEdit(currentUser.role) && (
                 <div>
                   {currentVersion.status === "Draft" ? (
-                    <button
-                      onClick={handlePromoteToLive}
-                      className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
-                    >
-                      Promote to Live
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleRegenerateDraft}
+                        disabled={isRegenerating}
+                        className="text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={lockedSections.length > 0 ? "Regenerate draft, preserving locked sections" : "Regenerate entire draft via LLM"}
+                      >
+                        {isRegenerating ? "Regenerating..." : "Regenerate Draft"}
+                      </button>
+                      <button
+                        onClick={handlePromoteToLive}
+                        className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
+                      >
+                        Promote to Live
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={handleCreateNewDraft}
@@ -1778,6 +1898,8 @@ export default function Home() {
                   onOpenAiEdit={handleOpenAiEdit}
                   onCommentSection={handleCommentSection}
                   onCommentSelection={handleCommentSelection}
+                  lockedSections={lockedSections}
+                  onToggleLock={handleToggleSectionLock}
                 />
               ) : (
                 <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
@@ -2387,7 +2509,9 @@ export default function Home() {
                 {isConverting ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
-                    Converting and validating document...
+                    {conversionStep === 0 && "Ingesting document..."}
+                    {conversionStep === 1 && "Synthesizing structure via LLM..."}
+                    {conversionStep === 2 && "Validating progressive disclosure..."}
                   </>
                 ) : (
                   <>

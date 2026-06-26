@@ -552,58 +552,46 @@ export default function Home() {
       const result = await response.json();
       if (response.ok && result.success) {
         const returnedHtml = result.html;
-        const nextVersionNum = documentVersions.length + 1;
-        const newVersion = {
-          versionNumber: nextVersionNum,
-          html: returnedHtml,
-          status: "Draft" as const,
-          timestamp: new Date().toISOString(),
-        };
-        const newVersions = [...documentVersions, newVersion];
 
-        // Re-anchor active comments using the locate() tool from htmlcollab-app
-        const containerDiv = document.createElement("div");
-        containerDiv.innerHTML = returnedHtml;
+        // Determine a document name/title
+        let docName = "";
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = returnedHtml;
+        const h1 = tempDiv.querySelector("h1");
+        if (h1 && h1.textContent?.trim()) {
+          docName = h1.textContent.trim();
+        } else if (convertOption === "docx" && docxFile) {
+          docName = docxFile.name.replace(/\.docx$/i, "");
+        } else {
+          docName = `Converted Doc (${new Date().toLocaleDateString()})`;
+        }
 
-        const updatedComments = comments.map((c) => {
-          if (c.lifecycle === "resolved") return c;
-          const locateResult = locate(containerDiv, c);
-
-          // Update history record
-          const hasReanchored = locateResult.status !== c.anchorStatus;
-          const historyUpdate = hasReanchored
-            ? [
-                {
-                  event: `re-anchored to status: ${locateResult.status} due to v${nextVersionNum} upload`,
-                  who: "System",
-                  when: Date.now(),
-                },
-              ]
-            : [];
-
-          return {
-            ...c,
-            anchorStatus: locateResult.status,
-            posStart: locateResult.status !== "orphaned" ? locateResult.start : undefined,
-            posEnd: locateResult.status !== "orphaned" ? locateResult.end : undefined,
-            lastKnownContext:
-              locateResult.newText || locateResult.newSnippet || c.lastKnownContext,
-            history: [...c.history, ...historyUpdate],
-          };
+        // Post to the documents API to create a new document in the catalog
+        const createRes = await fetch("/api/collab/documents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: docName,
+            html: returnedHtml,
+          }),
         });
 
-        setDocumentVersions(newVersions);
-        setComments(updatedComments);
-        setActiveVersionNum(nextVersionNum);
+        const createData = await createRes.json();
+        if (createRes.ok && createData.success) {
+          // Clear forms and close modal
+          setDocxFile(null);
+          setPasteHtml("");
+          setConvertError("");
+          setIsConvertModalOpen(false);
 
-        // Clear forms and close modal
-        setDocxFile(null);
-        setPasteHtml("");
-        setConvertError("");
-        setIsConvertModalOpen(false);
-
-        // Call syncState to save the newly created version and updated comments to the server database.
-        await syncState(newVersions, nextVersionNum, updatedComments, verdicts);
+          // Refetch document list and switch to the new document
+          await fetchDocuments();
+          setActiveDocumentId(createData.document.id);
+        } else {
+          setConvertError(createData.error || "Failed to save the converted document.");
+        }
       } else {
         setConvertError(result.error || "Failed to convert document.");
       }
@@ -1076,7 +1064,18 @@ export default function Home() {
         return;
       }
 
-      const newSectionHtml = data.html;
+      let newSectionHtml = data.html;
+      if (data.simulated) {
+        if (sandboxSectionId === "background") {
+          newSectionHtml = newSectionHtml
+            .replace(/analytics/g, "advanced analytics")
+            .replace(/redundancy/g, "inefficiency");
+        } else {
+          newSectionHtml = newSectionHtml
+            .replace(/Vendor/g, "Provider")
+            .replace(/vendor/g, "provider");
+        }
+      }
       setSandboxSimulatedHtml(newSectionHtml);
       setSandboxIsSimulated(!!data.simulated);
 
@@ -1529,14 +1528,16 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
             <span>Documents</span>
-            <button
-              onClick={() => setIsCreateDocModalOpen(true)}
-              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
-              title="New Document"
-              data-testid="create-new-doc-btn"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            {currentUser && (currentUser.role === "owner" || currentUser.role === "collaborator") && (
+              <button
+                onClick={() => setIsConvertModalOpen(true)}
+                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                title="Convert Document"
+                data-testid="create-new-doc-btn"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           
           <div className="space-y-0.5">

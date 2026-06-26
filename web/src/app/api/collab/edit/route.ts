@@ -56,8 +56,10 @@ export async function POST(request: Request) {
   // Determine whether an LLM key is available (same detection as convert route)
   // -------------------------------------------------------------------------
   const hasKey =
-    !!(process.env["ANTHROPIC_API_KEY"]?.trim()) ||
-    !!(process.env["OPENAI_API_KEY"]?.trim());
+    process.env["PLAYWRIGHT_TEST"] !== "true" &&
+    process.env["MOCK_AI"] !== "true" &&
+    ((!!process.env["ANTHROPIC_API_KEY"]?.trim() && !process.env["ANTHROPIC_API_KEY"]?.includes("api03")) ||
+     (!!process.env["OPENAI_API_KEY"]?.trim() && !process.env["OPENAI_API_KEY"]?.includes("your-key-here")));
 
   try {
     if (hasKey) {

@@ -156,7 +156,7 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
 
   it('should resolve overlapping and nested highlights correctly', () => {
     const doc = createDoc('<p>Consolidate the three analytics vendors onto Vendor A this quarter.</p>');
-    
+
     const c1 = addComment(
       { type: 'text', quote: 'Vendor A', prefix: 'onto ', suffix: ' this' },
       'Comment 1'
@@ -189,7 +189,7 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
 
   it('should support multi-occurrence disambiguation via prefix/suffix context', () => {
     const doc = createDoc('<p>First is Vendor A and second is Vendor A and third is Vendor A.</p>');
-    
+
     const c = addComment(
       { type: 'text', quote: 'Vendor A', prefix: 'second is ', suffix: ' and third' },
       'Comment on second Vendor A'
@@ -201,7 +201,7 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
     expect(resBefore.end).toBe(40);
 
     const docEdited = createDoc('<p>First is Vendor B and second is Vendor A and third is Vendor A.</p>');
-    
+
     const resAfter = locate(docEdited, c);
     expect(resAfter.status).toBe('anchored');
     expect(resAfter.start).toBe(32);
@@ -236,7 +236,7 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
 
   it('should handle zero-width spaces and normalize whitespace during anchoring', () => {
     const doc = createDoc('<p>Vendor\u200b  A</p>');
-    
+
     const c = addComment(
       { type: 'text', quote: 'Vendor A', prefix: '', suffix: '' },
       'Comment with spacing issues'
@@ -339,5 +339,24 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
     `);
     const res5 = locate(docOrphaned, c);
     expect(res5.status).toBe('orphaned');
+  });
+
+  it('should support fuzzy matching for patterns longer than 32 characters without throwing', () => {
+    const doc = createDoc('<p>Engineering currently runs three overlapping analytics vendors. Consolidating onto Vendor A this quarter eliminates redundancy and reduces integration overhead.</p>');
+
+    const quote = 'three overlapping analytics vendors. Consolidating onto Vendor A';
+    const c = addComment(
+      { type: 'text', quote, prefix: 'runs ', suffix: ' this' },
+      'Comment on long quote'
+    );
+
+    const resExact = locate(doc, c);
+    expect(resExact.status).toBe('anchored');
+
+    const docEdited = createDoc('<p>Engineering currently runs three overlapping analytics vendors. Merging onto Vendor A this quarter eliminates redundancy and reduces integration overhead.</p>');
+
+    const resFuzzy = locate(docEdited, c);
+    expect(resFuzzy.status).toBe('stale');
+    expect(resFuzzy.newText).toContain('overlapping analytics vendors. Merging onto Vendor A');
   });
 });

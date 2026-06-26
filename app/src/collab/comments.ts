@@ -256,7 +256,7 @@ export function rangeFromOffsets(root: any, start: number, end: number): Range |
   let totalLen = 0;
   let range = document.createRange();
   let startSet = false;
-  
+
   for (const t of nodes) {
     const len = (t.nodeValue || '').length;
     if (!startSet && start <= totalLen + len) {
@@ -272,14 +272,72 @@ export function rangeFromOffsets(root: any, start: number, end: number): Range |
   return null;
 }
 
+function matchMainSafe(dmp: any, text: string, pattern: string, expectedLoc: number): number {
+  if (pattern.length <= 32) {
+    try {
+      return dmp.match_main(text, pattern, expectedLoc);
+    } catch {
+      return -1;
+    }
+  }
+
+  const chunkSize = 32;
+  const candidates: { startIdx: number; score: number }[] = [];
+
+  const chunkOffsets = [
+    0,
+    Math.floor((pattern.length - chunkSize) / 2),
+    pattern.length - chunkSize
+  ].filter((offset, index, self) => self.indexOf(offset) === index);
+
+  for (const offset of chunkOffsets) {
+    const chunk = pattern.slice(offset, offset + chunkSize);
+    try {
+      const adjustedLoc = Math.max(0, expectedLoc + offset);
+      const chunkMatchIdx = dmp.match_main(text, chunk, adjustedLoc);
+
+      if (chunkMatchIdx !== -1) {
+        const candidateStartIdx = chunkMatchIdx - offset;
+        if (candidateStartIdx >= 0 && candidateStartIdx + pattern.length <= text.length + 50) {
+          if (!candidates.some(c => c.startIdx === candidateStartIdx)) {
+            const actualLen = Math.min(pattern.length + 20, text.length - candidateStartIdx);
+            const substring = text.slice(candidateStartIdx, candidateStartIdx + actualLen);
+            const diffs = dmp.diff_main(pattern, substring);
+            const distance = dmp.diff_levenshtein(diffs);
+            const maxLen = Math.max(pattern.length, substring.length);
+            const score = maxLen > 0 ? 1 - distance / maxLen : 0;
+
+            candidates.push({ startIdx: candidateStartIdx, score });
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  if (candidates.length === 0) {
+    return -1;
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  const bestCandidate = candidates[0]!;
+  if (bestCandidate.score >= 0.4) {
+    return bestCandidate.startIdx;
+  }
+
+  return -1;
+}
+
 export function locate(root: any, c: Comment): AnchorResult {
   const t = c.target;
-  
+
   if (t.type === 'element') {
     let e = null;
     if (t.id) {
-      const escapedId = typeof window !== 'undefined' && window.CSS && window.CSS.escape 
-        ? window.CSS.escape(t.id) 
+      const escapedId = typeof window !== 'undefined' && window.CSS && window.CSS.escape
+        ? window.CSS.escape(t.id)
         : t.id;
       try {
         e = root.querySelector(`#${escapedId}`);
@@ -308,19 +366,19 @@ export function locate(root: any, c: Comment): AnchorResult {
       newSnippet: snippetOf(e)
     };
   }
-  
+
   const nodes = textNodes(root);
   const rawFullText = nodes.map(n => n.nodeValue || '').join('');
   const { cleaned: cleanFullText, map: cleanToRawMap } = getCleanedTextAndMap(rawFullText);
-  
+
   const q = cleanContext(t.quote);
   const pre = cleanContext(t.prefix);
   const suf = cleanContext(t.suffix);
-  
+
   if (!q) {
     return { status: 'orphaned' };
   }
-  
+
   // Find all exact occurrences of q in cleanFullText
   const hits: number[] = [];
   let i = cleanFullText.indexOf(q);
@@ -328,7 +386,7 @@ export function locate(root: any, c: Comment): AnchorResult {
     hits.push(i);
     i = cleanFullText.indexOf(q, i + 1);
   }
-  
+
   // If exactly one match is found
   if (hits.length === 1) {
     const cleanStart = hits[0]!;
@@ -337,7 +395,7 @@ export function locate(root: any, c: Comment): AnchorResult {
     const end = cleanToRawMap[cleanEnd - 1]! + 1;
     return { status: 'anchored', start, end };
   }
-  
+
   // If multiple matches are found, use prefix and suffix context for disambiguation
   if (hits.length > 1) {
     let best = hits[0]!;
@@ -357,7 +415,7 @@ export function locate(root: any, c: Comment): AnchorResult {
     const end = cleanToRawMap[cleanEnd - 1]! + 1;
     return { status: 'anchored', start, end };
   }
-  
+
   // If no exact match is found, check if pre + suf can bracket a modified quote (context-bracket)
   const STALE_WINDOW = 400;
   if (pre && suf) {
@@ -379,27 +437,27 @@ export function locate(root: any, c: Comment): AnchorResult {
       }
     }
   }
-  
+
   // Last resort: fuzzy match using diff-match-patch
   const cleanPre = pre;
   const hintIdx = (cleanPre && cleanFullText.includes(cleanPre))
     ? cleanFullText.indexOf(cleanPre) + cleanPre.length
     : (c.posStart !== undefined ? c.posStart : 0);
-  
+
   const dmp = new diff_match_patch();
   dmp.Match_Threshold = 0.5;
-  
+
   const cleanHintIdx = cleanToRawMap.indexOf(hintIdx);
   const targetCleanHintIdx = cleanHintIdx !== -1 ? cleanHintIdx : hintIdx;
-  
-  const idx = dmp.match_main(cleanFullText, q, targetCleanHintIdx);
+
+  const idx = matchMainSafe(dmp, cleanFullText, q, targetCleanHintIdx);
   if (idx !== -1) {
     const matchedSubClean = cleanFullText.slice(idx, idx + q.length);
     const diffs = dmp.diff_main(q, matchedSubClean);
     const distance = dmp.diff_levenshtein(diffs);
     const maxLen = Math.max(q.length, matchedSubClean.length);
     const score = maxLen > 0 ? 1 - distance / maxLen : 1;
-    
+
     const FUZZY_THRESHOLD = 0.6;
     if (score >= FUZZY_THRESHOLD) {
       const cleanStart = idx;
@@ -415,7 +473,7 @@ export function locate(root: any, c: Comment): AnchorResult {
       };
     }
   }
-  
+
   return { status: 'orphaned' };
 }
 
@@ -461,12 +519,12 @@ export function recordNotification(
   const byLower = by.toLowerCase();
   const currentUserMember = MEMBERS.find(m => m.name.toLowerCase() === byLower || m.id === byLower);
   const currentUserId = currentUserMember ? currentUserMember.id : byLower;
-  
+
   for (const to of mentions) {
     if (to === currentUserId) {
       continue;
     }
-    
+
     const id = 'n' + Math.abs(hashString(to + by + snippet + Date.now() + Math.random())).toString(36);
     notificationsList.push({
       id,
@@ -508,12 +566,12 @@ export function addComment(
     mentions,
     history: [{ event: 'created', who: author, when: Date.now() }]
   };
-  
+
   if (target.type === 'text') {
     comment.posStart = posStart !== undefined ? posStart : 0;
     comment.posEnd = posEnd !== undefined ? posEnd : target.quote.length;
   }
-  
+
   commentsList.push(comment);
   recordNotification(mentions, author, comment.id, null, cleanedBody);
   return comment;
@@ -534,10 +592,10 @@ export function addReply(commentId: string, body: string): Reply {
     mentions,
     ts: Date.now()
   };
-  
+
   c.replies.push(reply);
   c.history.push({ event: 'reply added', who: author, when: Date.now() });
-  
+
   recordNotification(mentions, author, commentId, reply.id, cleanedBody);
   return reply;
 }
@@ -557,7 +615,7 @@ export function resolveComment(
     resolvedAt: Date.now(),
     changeLink: changeLink || null
   };
-  
+
   const eventName = changeLink ? 'resolved (content edited)' : 'resolved (no change)';
   c.history.push({ event: eventName, who: author, when: Date.now() });
   return c;

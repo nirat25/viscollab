@@ -98,8 +98,29 @@ This document outlines the architectural decisions for the four core pillars of 
 
 ---
 
+## 5. Authentication Layer
+
+### Requirements
+- Provide secure session management for an internal-first MVP.
+- Allow dynamic inviting of new team members and external stakeholders.
+- Enforce strict role-based access control (RBAC) at the document and workspace levels (Owner, Collaborator, Commenter, Viewer).
+- Must seamlessly integrate with the Next.js App Router (SSR and Server Components).
+
+### Options Considered
+- **Stateless NextAuth.js (Hardcoded Whitelist):** Highly secure and zero-infrastructure, but fails to scale when needing to dynamically invite new users without a code deployment.
+- **Clerk:** Excellent out-of-the-box UI and dashboard for inviting users, but introduces heavy SaaS dependency, dictating UI/UX for a purely internal tool.
+- **Firebase Auth:** Extremely robust, but integration with Next.js Server Components and strict SSR session verification requires complex boilerplate via Firebase Admin SDK.
+
+### Recommendation: NextAuth.js + PostgreSQL (via Prisma/Drizzle)
+* **Why:** NextAuth provides the simplest, most native integration with Next.js App Router while still letting us fully control the user schema.
+* **Scalability:** By wiring NextAuth to the same PostgreSQL database chosen for the Storage Layer (via the `@next-auth/prisma-adapter`), we gain the ability to dynamically manage users, assign roles, and revoke access in the database without altering the codebase.
+* **Identity:** We can enforce authentication strictly via an OAuth provider like Google Workspace (ensuring users belong to the corporate domain) while managing their granular authorization roles in our Postgres tables.
+
+---
+
 ## Summary of MVP Architecture
 1. **Frontend:** Next.js + React + TipTap (ProseMirror core).
 2. **LLM:** Anthropic Claude 3.5 Sonnet (Initial Generation) + Claude 3 Haiku (Surgical Edits).
 3. **Storage:** PostgreSQL (JSONB for ASTs, Relational for State/Comments).
 4. **IR Format:** Clean JSON AST (compatible with the frontend editor schema), generated via semantic HTML stripping (Mammoth.js).
+5. **Authentication:** NextAuth.js (Auth.js) backed by PostgreSQL to manage scalable team invites and role-based access.

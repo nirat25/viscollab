@@ -287,6 +287,11 @@ Rule of thumb: if the output is produced by an LLM, it gets an **eval test**, no
 - *DoD:* the right people can do the right things; the wrong people can't.
 - *Tests (deterministic):* a view link cannot comment; a non-workspace user is blocked; link revocation takes effect immediately; a Draft is never externally shareable.
 
+**P2-T11 · [AGENT] Team Invite & RBAC UI**
+- *Depends on:* P2-T10.
+- *Build:* A simple settings panel where `owners` can invite teammates by email and assign roles (`Collaborator`, `Commenter`, `Viewer`).
+- *DoD:* Inviting a user writes to the database, granting them immediate access upon their next OAuth login without requiring code deployments.
+
 ---
 
 ### PHASE 3 — Internal dogfood · ~3–4 weeks rolling
@@ -371,9 +376,4 @@ Measure outcomes that reflect the reader's experience and the alignment result �
 Phase 0, first task: book the five external conversations and ask the reversed-decision question. If that story comes back fast and stinging, proceed with confidence. If it doesn't — or if the sting attaches to a *different* document type — follow the sting, not this document. The durable part of this work is the lens (reader must have a stake; serve the reader; collapse the cost of reading). The specific document type is the part user research is allowed to overrule.
 
 *End of v1.0.*
-
-**P2-T9 · [AGENT] Real Authentication**
-- *Depends on:* P2-T8.
-- *Build:* Replace mock auth with real authentication (e.g. NextAuth/Auth.js).
-- *DoD:* Users can sign in securely and maintain a secure session.
 

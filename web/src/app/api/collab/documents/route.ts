@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { getDocuments, saveDocuments, saveState } from "../db";
 import crypto from "crypto";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/options";
 
 export async function GET() {
   try {
+    let session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const documents = await getDocuments();
     return NextResponse.json({ success: true, documents });
   } catch (e: any) {
@@ -13,6 +19,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    let session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { name, html } = await request.json();
     if (!name || !html) {
       return NextResponse.json({ error: "Missing name or html" }, { status: 400 });

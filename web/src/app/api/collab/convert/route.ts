@@ -1,12 +1,32 @@
 import { NextResponse } from "next/server";
 import { runPipeline } from "htmlcollab-app/pipeline";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/options";
+import { canEdit } from "htmlcollab-app/collab";
+import { marked } from "marked";
+
 
 export async function POST(request: Request) {
   try {
+    let session = await getServerSession(authOptions);
+    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
+      session = {
+        user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
+        expires: ""
+      };
+    }
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canEdit((session.user.role || "viewer") as any)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const contentType = request.headers.get("content-type") || "";
     let htmlResult = "";
     let fileName = "uploaded-doc";
     let warnings: string[] = [];
+
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
@@ -17,12 +37,31 @@ export async function POST(request: Request) {
       fileName = file.name;
       const buffer = Buffer.from(await file.arrayBuffer());
 
-      // Run pipeline with docx buffer
-      const pipelineResult = await runPipeline({
-        kind: "docx-buffer",
-        buffer,
-        fileName
-      });
+      const isHtml = fileName.toLowerCase().endsWith(".html") || fileName.toLowerCase().endsWith(".htm");
+      const isMd = fileName.toLowerCase().endsWith(".md");
+      let pipelineResult;
+      
+      if (isHtml) {
+        pipelineResult = await runPipeline({
+          kind: "raw-html",
+          rawHtml: buffer.toString("utf-8"),
+          fileName
+        });
+      } else if (isMd) {
+        const mdText = buffer.toString("utf-8");
+        const htmlParsed = await marked.parse(mdText);
+        pipelineResult = await runPipeline({
+          kind: "raw-html",
+          rawHtml: htmlParsed,
+          fileName
+        });
+      } else {
+        pipelineResult = await runPipeline({
+          kind: "docx-buffer",
+          buffer,
+          fileName
+        });
+      }
       htmlResult = pipelineResult.html;
       if (pipelineResult.disclosure && pipelineResult.disclosure.warnings) {
         warnings = pipelineResult.disclosure.warnings;

@@ -368,6 +368,7 @@ export default function Home() {
   const [newDocHtml, setNewDocHtml] = useState("");
   const [newDocError, setNewDocError] = useState("");
   const [tourStep, setTourStep] = useState<number | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Auth state
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
@@ -1597,11 +1598,18 @@ export default function Home() {
   return (
     <div className="pane-layout-container font-sans text-slate-900">
       
+      {/* Left Sidebar Overlay */}
+      <div 
+        className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity duration-300 ${isSidebarOpen || tourStep === 0 ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+        onClick={() => setIsSidebarOpen(false)}
+      />
       {/* Left Sidebar */}
       <aside
         id="tour-sidebar"
-        className={`w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 h-screen transition-all ${
-          tourStep === 0 ? "ring-4 ring-indigo-500 ring-offset-2 ring-offset-slate-900 z-50 animate-pulse" : ""
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shadow-2xl transform transition-transform duration-300 ${
+          isSidebarOpen || tourStep === 0 ? "translate-x-0" : "-translate-x-full"
+        } ${
+          tourStep === 0 ? "ring-4 ring-indigo-500 ring-offset-2 ring-offset-slate-900 animate-pulse" : ""
         }`}
       >
         {/* Workspace Title & Brand */}
@@ -1700,11 +1708,11 @@ export default function Home() {
           {/* Replay tour and metadata */}
           <div className="flex items-center justify-between border-t border-slate-800/80 pt-2 text-[10px] text-slate-500 font-semibold">
             <button
-              onClick={() => startTour()}
+              onClick={() => { startTour(); setIsSidebarOpen(true); localStorage.removeItem("onboarding_tour_completed"); }}
               className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer py-1 px-1.5 rounded hover:bg-slate-800"
             >
               <HelpCircle className="h-3.5 w-3.5" />
-              <span>Replay Tour</span>
+              <span>Restart Tour</span>
             </button>
             <span className="font-mono opacity-80">v1.2.0</span>
           </div>
@@ -1715,8 +1723,15 @@ export default function Home() {
       <div className="pane-workspace-frame">
         
         {/* Premium Header */}
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Open Workspace Explorer"
+            >
+              <List className="h-5 w-5" />
+            </button>
             <div>
               <h1 className="text-lg font-bold tracking-tight font-display text-slate-900 flex items-center gap-2">
                 <FileText className="h-4.5 w-4.5 text-indigo-600" />
@@ -2434,7 +2449,7 @@ export default function Home() {
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  Paste Google Docs HTML
+                  Paste HTML / Google Docs
                 </button>
               </div>
 

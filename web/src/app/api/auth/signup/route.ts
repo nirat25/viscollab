@@ -14,25 +14,22 @@ export async function POST(request: Request) {
       (u: any) => u.username?.toLowerCase() === username.toLowerCase()
     );
     if (existingUser) {
-      return NextResponse.json({ error: "User already exists" }, { status: 400 });
+      if (existingUser.passwordHash) {
+        return NextResponse.json({ error: "User already exists" }, { status: 400 });
+      } else {
+        // Complete signup for invited user
+        existingUser.passwordHash = hashPassword(password);
+        existingUser.token = crypto.randomBytes(16).toString("hex");
+        await saveUsers(users);
+        return NextResponse.json({
+          success: true,
+          token: existingUser.token,
+          user: { name: existingUser.username, role: existingUser.role },
+        });
+      }
     }
 
-    const token = crypto.randomBytes(16).toString("hex");
-    const newUser = {
-      username,
-      passwordHash: hashPassword(password),
-      role,
-      token,
-    };
-
-    users.push(newUser);
-    await saveUsers(users);
-
-    return NextResponse.json({
-      success: true,
-      token,
-      user: { name: username, role },
-    });
+    return NextResponse.json({ error: "Signups are restricted to invited members only." }, { status: 403 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to signup" }, { status: 500 });
   }

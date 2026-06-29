@@ -121,4 +121,62 @@ test.describe("HTMLCollab Dashboard - E2E Polish", () => {
     const versionSelect = page.locator("header select");
     await expect(versionSelect).toHaveValue("2");
   });
+
+  test("Team Invite and RBAC UI flow", async ({ page }) => {
+    // 1. Log in as owner (Sam)
+    await page.click('[data-testid="token-btn-owner"]');
+    await page.waitForTimeout(1000);
+
+    // 2. Open Team Settings modal
+    const teamBtn = page.locator('[data-testid="team-settings-button"]');
+    await expect(teamBtn).toBeVisible();
+    await teamBtn.click();
+
+    // 3. Invite a new user with "viewer" role
+    const usernameInput = page.locator('[data-testid="invite-username-input"]');
+    await expect(usernameInput).toBeVisible();
+    await usernameInput.fill("test-invite-user");
+    await page.selectOption('[data-testid="invite-role-select"]', "viewer");
+
+    const submitInviteBtn = page.locator('[data-testid="invite-submit-button"]');
+    await submitInviteBtn.click();
+
+    // Verify success alert and user listed in team
+    const successAlert = page.locator('[data-testid="invite-success-alert"]');
+    await expect(successAlert).toBeVisible();
+    await expect(page.locator('[data-testid="member-username-test-invite-user"]')).toBeVisible();
+    await expect(page.locator('[data-testid="member-role-test-invite-user"]')).toContainText("viewer");
+
+    // Close modal
+    await page.click('[data-testid="team-modal-close"]');
+
+    // 4. Sign out
+    const logoutBtn = page.locator('header [title="Log Out"]').first();
+    await logoutBtn.click();
+    await page.waitForTimeout(500);
+
+    // 5. Sign up as the invited user
+    await page.click('button:has-text("Sign Up")');
+
+    const signupUsername = page.locator('#signup-username');
+    const signupPassword = page.locator('#signup-password');
+    await signupUsername.fill("test-invite-user");
+    await signupPassword.fill("password");
+    await page.click('button[type="submit"]:has-text("Create Account")');
+    await page.waitForTimeout(1000);
+
+    // 6. Verify user is logged in as viewer
+    await expect(page.locator("header")).toContainText("test-invite-user");
+    await expect(page.locator("header")).toContainText("viewer");
+
+    // 7. Verify viewer cannot edit or convert
+    const convertBtn = page.locator('button:has-text("Convert Document")');
+    await expect(convertBtn).not.toBeVisible();
+
+    // Verify AI edit button is hidden on hover
+    await page.locator('#background').hover();
+    const aiEditBtn = page.locator('[data-testid="ai-edit-btn-background"]');
+    await expect(aiEditBtn).not.toBeVisible();
+  });
 });
+

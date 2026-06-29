@@ -25,7 +25,6 @@ export interface DocumentSurfaceProps {
   docId: string;
   versionNumber: number;
   html: string;
-  isDraft: boolean;
   comments: Comment[];
   sectionsMetadata: SectionMeta[];
   sectionIds: string[];
@@ -35,15 +34,10 @@ export interface DocumentSurfaceProps {
   /** Container ref owned by the parent (used for in-page anchor scrolling). */
   previewContainerRef: React.RefObject<HTMLDivElement | null>;
   onSelectComment: (commentId: string) => void;
-  onOpenAiEdit: (sectionId: string) => void;
   /** Whole-section comment via the toolbar button. */
   onCommentSection: (sectionId: string) => void;
   /** Text-selection comment: opens composer pre-filled with the quote. */
   onCommentSelection: (sel: PendingSelection) => void;
-  /** Locked sections */
-  lockedSections: string[];
-  /** Toggle section lock */
-  onToggleLock: (sectionId: string) => void;
 }
 
 /* ---- cross-node text math (mirrors comments.ts model) ---- */
@@ -101,7 +95,6 @@ export default function DocumentSurface({
   docId,
   versionNumber,
   html,
-  isDraft,
   comments,
   sectionsMetadata,
   sectionIds,
@@ -110,11 +103,8 @@ export default function DocumentSurface({
   canComment,
   previewContainerRef,
   onSelectComment,
-  onOpenAiEdit,
   onCommentSection,
   onCommentSelection,
-  lockedSections,
-  onToggleLock,
 }: DocumentSurfaceProps) {
   const artRef = useRef<HTMLDivElement>(null);
 
@@ -552,13 +542,8 @@ export default function DocumentSurface({
           sectionId={hoveredSectionId}
           title={hoveredMeta?.title || hoveredSectionId}
           top={toolbarTop}
-          canEdit={canEdit}
           canComment={canComment}
-          isDraft={isDraft}
-          isLocked={lockedSections.includes(hoveredSectionId)}
-          onAiEdit={onOpenAiEdit}
           onComment={onCommentSection}
-          onToggleLock={onToggleLock}
         />
       )}
 

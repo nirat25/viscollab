@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #1e293b; /* bg-slate-800 */
+  --foreground: #f1f5f9; /* text-slate-100 */
 }
 
 @theme inline {
@@ -296,3 +296,290 @@ aside#tour-sidebar ::-webkit-scrollbar-thumb:hover {
 .vc-artifact .vc-section-hover {
   border-left-color: rgba(99, 102, 241, 0.55);
 }
+
+/* ---------------------------------------------------------------- *
+ * VISCOLLAB COMPONENT LIBRARY (Document Artifacts)                 *
+ * ---------------------------------------------------------------- */
+
+.vcd-wrap {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+  color: #1e293b;
+  line-height: 1.6;
+}
+
+/* Component: Timeline / Nodes */
+.vcd-node-container {
+  position: relative;
+  padding-left: 2.5rem;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+.vcd-node-container::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0.75rem; width: 2px;
+  background: linear-gradient(to bottom, #4f46e5, #9333ea, #ec4899);
+  border-radius: 2px;
+  opacity: 0.3;
+}
+.vcd-node {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vcd-node:hover {
+  transform: translateX(4px);
+  border-color: #a5b4fc;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+}
+.vcd-node::before {
+  content: '';
+  position: absolute;
+  top: 2rem; left: -2.15rem; width: 14px; height: 14px;
+  background: #ffffff;
+  border: 2px solid #4f46e5;
+  border-radius: 50%;
+  z-index: 10;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+}
+.vcd-node-title {
+  font-size: 1.1rem; font-weight: 600; color: #0f172a;
+  margin-top: 0; margin-bottom: 0.75rem;
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.vcd-node-body {
+  font-size: 0.95rem; color: #334155;
+}
+
+/* Component: BLUF (Bottom Line Up Front) */
+.vcd-bluf {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  padding: 1.75rem; border-radius: 16px; margin-bottom: 3rem;
+  position: relative; overflow: hidden;
+}
+.vcd-bluf::after {
+  content: '★'; position: absolute; top: -20px; right: -10px; font-size: 8rem; opacity: 0.03; color: #4f46e5; line-height: 1;
+}
+.vcd-bluf .label {
+  font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: #4338ca; margin-bottom: 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem;
+}
+.vcd-bluf .label::before { content: ''; width: 8px; height: 8px; background: #4338ca; border-radius: 50%; display: inline-block; }
+.vcd-bluf .headline { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.75rem 0; color: #0f172a; line-height: 1.3; }
+.vcd-bluf .subhead { font-size: 1.05rem; color: #475569; margin: 0; }
+
+/* Component: Badges */
+.badge {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 6px; padding: 0.25rem 0.6rem; white-space: nowrap; flex-shrink: 0;
+}
+.badge-primary { background: rgba(79, 70, 229, 0.1); color: #4338ca; border: 1px solid rgba(79, 70, 229, 0.2); }
+.badge-secondary { background: rgba(100, 116, 139, 0.1); color: #475569; border: 1px solid rgba(100, 116, 139, 0.2); }
+
+/* Component: Tables */
+.vcd-table {
+  width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem; margin-top: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+}
+.vcd-table thead tr { background: #f8fafc; }
+.vcd-table th { text-align: left; padding: 0.85rem 1rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; border-bottom: 1px solid #e2e8f0; }
+.vcd-table td { padding: 0.85rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+.vcd-table tr:last-child td { border-bottom: none; }
+.vcd-table tr.highlight td { font-weight: 600; color: #4338ca; background: rgba(79, 70, 229, 0.03); }
+
+/* Component: Accordions (Progressive Disclosure) */
+details.vcd-accordion {
+  margin-top: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+details.vcd-accordion summary {
+  cursor: pointer; padding: 1.25rem 1.5rem; font-size: 1rem; font-weight: 600; color: #1e293b; background: #f8fafc; list-style: none; user-select: none; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid transparent; transition: background 0.2s;
+}
+details.vcd-accordion summary:hover { background: #f1f5f9; }
+details.vcd-accordion summary::-webkit-details-marker { display: none; }
+details.vcd-accordion summary::after { content: '+'; font-size: 1.25rem; font-weight: 400; color: #64748b; transition: transform 0.2s; }
+details.vcd-accordion[open] summary { border-bottom-color: #e2e8f0; }
+details.vcd-accordion[open] summary::after { transform: rotate(45deg); }
+details.vcd-accordion .accordion-body { padding: 1.5rem; font-size: 0.95rem; color: #334155; line-height: 1.6; }
+
+/* Component: Lateral Card Grid */
+.vcd-card-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; margin-bottom: 1.5rem;
+}
+.vcd-card {
+  background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.03); transition: transform 0.2s, box-shadow 0.2s;
+}
+.vcd-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); border-color: #cbd5e1; }
+.vcd-card-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; margin-top: 0; margin-bottom: 0.5rem; }
+.vcd-card-body { font-size: 0.9rem; color: #475569; margin: 0; }
+
+/* Resilient fallbacks for LLM-hallucinated classes */
+.vcd-grid { display: grid; gap: 1.5rem; margin: 1.5rem 0; }
+.vcd-grid--2 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.vcd-callout { background: rgba(241, 245, 249, 0.8); border-left: 4px solid #94a3b8; padding: 1.25rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0; }
+.vcd-callout--tip { background: rgba(238, 242, 255, 0.8); border-left-color: #6366f1; color: #312e81; }
+.vcd-section { margin-bottom: 3rem; }
+.vcd-section-title { font-size: 1.5rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+
+/* Fallback for div-based accordion */
+div.vcd-accordion { margin: 1.5rem 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); }
+div.vcd-accordion-header { padding: 1.25rem 1.5rem; font-weight: 600; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
+div.vcd-accordion-body { padding: 1.5rem; font-size: 0.95rem; color: #334155; }
+.vcd-back-to-top { display: inline-block; margin-top: 1rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; font-weight: 600; }
+.vcd-back-to-top:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- *
+ * VISCOLLAB COMPONENT LIBRARY (Document Artifacts)                 *
+ * ---------------------------------------------------------------- */
+
+.vcd-wrap {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+  color: #1e293b;
+  line-height: 1.6;
+}
+
+/* Component: Timeline / Nodes */
+.vcd-node-container {
+  position: relative;
+  padding-left: 2.5rem;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+.vcd-node-container::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0.75rem; width: 2px;
+  background: linear-gradient(to bottom, #4f46e5, #9333ea, #ec4899);
+  border-radius: 2px;
+  opacity: 0.3;
+}
+.vcd-node {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.vcd-node:hover {
+  transform: translateX(4px);
+  border-color: #a5b4fc;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+}
+.vcd-node::before {
+  content: '';
+  position: absolute;
+  top: 2rem; left: -2.15rem; width: 14px; height: 14px;
+  background: #ffffff;
+  border: 2px solid #4f46e5;
+  border-radius: 50%;
+  z-index: 10;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+}
+.vcd-node-title {
+  font-size: 1.1rem; font-weight: 600; color: #0f172a;
+  margin-top: 0; margin-bottom: 0.75rem;
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.vcd-node-body {
+  font-size: 0.95rem; color: #334155;
+}
+
+/* Component: BLUF (Bottom Line Up Front) */
+.vcd-bluf {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  padding: 1.75rem; border-radius: 16px; margin-bottom: 3rem;
+  position: relative; overflow: hidden;
+}
+.vcd-bluf::after {
+  content: '★'; position: absolute; top: -20px; right: -10px; font-size: 8rem; opacity: 0.03; color: #4f46e5; line-height: 1;
+}
+.vcd-bluf .label {
+  font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: #4338ca; margin-bottom: 0.75rem; display: inline-flex; align-items: center; gap: 0.5rem;
+}
+.vcd-bluf .label::before { content: ''; width: 8px; height: 8px; background: #4338ca; border-radius: 50%; display: inline-block; }
+.vcd-bluf .headline { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.75rem 0; color: #0f172a; line-height: 1.3; }
+.vcd-bluf .subhead { font-size: 1.05rem; color: #475569; margin: 0; }
+
+/* Component: Badges */
+.badge {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 6px; padding: 0.25rem 0.6rem; white-space: nowrap; flex-shrink: 0;
+}
+.badge-primary { background: rgba(79, 70, 229, 0.1); color: #4338ca; border: 1px solid rgba(79, 70, 229, 0.2); }
+.badge-secondary { background: rgba(100, 116, 139, 0.1); color: #475569; border: 1px solid rgba(100, 116, 139, 0.2); }
+
+/* Component: Tables */
+.vcd-table {
+  width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem; margin-top: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+}
+.vcd-table thead tr { background: #f8fafc; }
+.vcd-table th { text-align: left; padding: 0.85rem 1rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; border-bottom: 1px solid #e2e8f0; }
+.vcd-table td { padding: 0.85rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+.vcd-table tr:last-child td { border-bottom: none; }
+.vcd-table tr.highlight td { font-weight: 600; color: #4338ca; background: rgba(79, 70, 229, 0.03); }
+
+/* Component: Accordions (Progressive Disclosure) */
+details.vcd-accordion {
+  margin-top: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+details.vcd-accordion summary {
+  cursor: pointer; padding: 1.25rem 1.5rem; font-size: 1rem; font-weight: 600; color: #1e293b; background: #f8fafc; list-style: none; user-select: none; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid transparent; transition: background 0.2s;
+}
+details.vcd-accordion summary:hover { background: #f1f5f9; }
+details.vcd-accordion summary::-webkit-details-marker { display: none; }
+details.vcd-accordion summary::after { content: '+'; font-size: 1.25rem; font-weight: 400; color: #64748b; transition: transform 0.2s; }
+details.vcd-accordion[open] summary { border-bottom-color: #e2e8f0; }
+details.vcd-accordion[open] summary::after { transform: rotate(45deg); }
+details.vcd-accordion .accordion-body { padding: 1.5rem; font-size: 0.95rem; color: #334155; line-height: 1.6; }
+
+/* Component: Lateral Card Grid */
+.vcd-card-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; margin-bottom: 1.5rem;
+}
+.vcd-card {
+  background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.03); transition: transform 0.2s, box-shadow 0.2s;
+}
+.vcd-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); border-color: #cbd5e1; }
+.vcd-card-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; margin-top: 0; margin-bottom: 0.5rem; }
+.vcd-card-body { font-size: 0.9rem; color: #475569; margin: 0; }
+
+/* Resilient fallbacks for LLM-hallucinated classes */
+.vcd-grid { display: grid; gap: 1.5rem; margin: 1.5rem 0; }
+.vcd-grid--2 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.vcd-callout { background: rgba(241, 245, 249, 0.8); border-left: 4px solid #94a3b8; padding: 1.25rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0; }
+.vcd-callout--tip { background: rgba(238, 242, 255, 0.8); border-left-color: #6366f1; color: #312e81; }
+.vcd-section { margin-bottom: 3rem; }
+.vcd-section-title { font-size: 1.5rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+
+/* Fallback for div-based accordion */
+div.vcd-accordion { margin: 1.5rem 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); }
+div.vcd-accordion-header { padding: 1.25rem 1.5rem; font-weight: 600; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
+div.vcd-accordion-body { padding: 1.5rem; font-size: 0.95rem; color: #334155; }
+.vcd-back-to-top { display: inline-block; margin-top: 1rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; font-weight: 600; }
+.vcd-back-to-top:hover { text-decoration: underline; }
+
+/* Resilient fallbacks for LLM-hallucinated classes */
+.vcd-grid { display: grid; gap: 1.5rem; margin: 1.5rem 0; }
+.vcd-grid--2 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.vcd-callout { background: rgba(241, 245, 249, 0.8); border-left: 4px solid #94a3b8; padding: 1.25rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0; }
+.vcd-callout--tip { background: rgba(238, 242, 255, 0.8); border-left-color: #6366f1; color: #312e81; }
+.vcd-section { margin-bottom: 3rem; }
+.vcd-section-title { font-size: 1.5rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+
+/* Fallback for div-based accordion */
+div.vcd-accordion { margin: 1.5rem 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); }
+div.vcd-accordion-header { padding: 1.25rem 1.5rem; font-weight: 600; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
+div.vcd-accordion-body { padding: 1.5rem; font-size: 0.95rem; color: #334155; }
+.vcd-back-to-top { display: inline-block; margin-top: 1rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; font-weight: 600; }
+.vcd-back-to-top:hover { text-decoration: underline; }

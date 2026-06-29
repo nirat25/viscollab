@@ -96,11 +96,23 @@ export function validateContract(html: string): ContractResult {
 // ── Design profiles ────────────────────────────────────────────────────────────
 
 export const DESIGN_PROFILES = `
-DESIGN PROFILES — pick the single best fit for this document:
-- "Tufte": High data-ink ratio. Dense information, margin-style asides via <details>/<summary>.
-  Best for: technical, data-heavy, analytical documents.
-- "Executive Brief": Highly skimmable, BLUF (Bottom Line Up Front), bullet-driven, clear hierarchy.
-  Best for: decision memos, status updates, leadership summaries.
+VISUAL COMPONENT LIBRARY — You are a Design System Orchestrator. You MUST use these exact HTML structures. DO NOT invent your own classes.
+- "BLUF": Always use for the primary executive summary at the top.
+  <div class="vcd-bluf"><div class="label">Primary Conclusion</div><h2 class="headline">...</h2><p class="subhead">...</p></div>
+- "Timeline / Flow": Best for roadmaps, processes, or chronological points.
+  <div class="vcd-node-container">
+    <div class="vcd-node"><h3 class="vcd-node-title">...</h3><div class="vcd-node-body">...</div></div>
+  </div>
+- "Lateral Grid": Best for comparisons, matrices, or discrete parallel ideas.
+  <div class="vcd-card-grid">
+    <div class="vcd-card"><h3 class="vcd-card-title">...</h3><p class="vcd-card-body">...</p></div>
+  </div>
+- "Progressive Disclosure": Mandatory for dense, deep-dive information to prevent text walls.
+  <details class="vcd-accordion"><summary>...</summary><div class="accordion-body">...</div></details>
+- "Data": For tabular data. Use <tr class="highlight"> for recommended rows.
+  <table class="vcd-table"><thead>...</thead><tbody>...</tbody></table>
+- "Tags": For metadata inside titles or cards.
+  <span class="badge badge-primary">...</span> or <span class="badge badge-secondary">...</span>
 `.trim();
 
 // ── Rendering spec ─────────────────────────────────────────────────────────────
@@ -111,24 +123,17 @@ DESIGN PROFILES — pick the single best fit for this document:
 export const RENDER_SPEC = `
 You receive a document of UNKNOWN type. You decide what it is and what a reader needs.
 
-Output a single self-contained HTML fragment (no <html>/<head>/<body>, no <script>, no external
-CSS/JS/iframes). Render the document into the structure that best serves a reader, following these
-principles for ANY document type:
+Output a single self-contained HTML fragment wrapped in <div class="vcd-wrap" id="top">. 
+(No <html>/<head>/<body>, no <script>, no inline CSS or <style>, no external resources). 
+Render the document into the structure that best serves a reader, following these principles:
 
-1. SURFACE THE LEAD. Identify the single most load-bearing point/purpose of THIS document and
-   place it first, above the fold, stated plainly. If the source buries it, lift it to the top.
-2. PROGRESSIVE DISCLOSURE. Default view shows the digest; push depth into native
-   <details><summary>…</summary>…</details> blocks. The reader controls depth.
-3. STRUCTURE FOR COMPREHENSION, NOT DECORATION. Use hierarchy, grouping, tables, and anchored
-   navigation to reduce reading cost. A plainly-styled, well-structured artifact beats a decorated,
-   poorly-structured one.
-4. SAFE PALETTE ONLY: <details>/<summary>, in-page <a href="#id"> anchors, title tooltips.
-   NOTHING that executes JS. Give all targets stable id attributes; every anchor must resolve.
-5. FIDELITY: do NOT fabricate content absent from the source; do NOT drop a material point;
-   NEVER render a minor point more prominently than the document's main point.
+1. SURFACE THE LEAD. Identify the single most load-bearing point/purpose of THIS document and place it first in a "vcd-bluf" block.
+2. ORCHESTRATE DESIGN. Do not output raw text walls. Use the provided Visual Component Library to structure the information based on its semantic meaning (e.g., timelines for processes, grids for comparisons).
+3. PROGRESSIVE DISCLOSURE. Default view shows the digest. Push depth and verbosity into "vcd-accordion" blocks. The reader controls depth.
+4. SAFE PALETTE ONLY: Use only the provided component classes and safe HTML. NOTHING that executes JS. Give all major targets stable id attributes.
+5. FIDELITY: Do NOT fabricate content absent from the source; do NOT drop a material point.
 
-${DESIGN_PROFILES}
+\${DESIGN_PROFILES}
 
-You choose the sections, their order, and the visual grammar — there is no fixed template.
-Auto-select and apply the best design profile for the document.
+You choose the sections, their order, and which components to use. Assemble the optimal layout for this specific document.
 `.trim();

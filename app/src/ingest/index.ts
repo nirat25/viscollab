@@ -10,6 +10,7 @@
 export { ingestDocxFromPath, ingestDocxFromBuffer, IngestError, MAX_DOCX_BYTES } from "./docx.js";
 export { ingestGDocHtml, GDocIngestError, MAX_GDOC_BYTES } from "./gdoc.js";
 export { sanitizeGDocHtml } from "./gdoc.js";
+export { ingestRawHtml, RawIngestError, MAX_RAW_BYTES } from "./raw-html.js";
 
 // Re-export IR types for convenience so callers don't need a second import.
 export type {

@@ -123,6 +123,28 @@ export async function saveUsers(users: any[]): Promise<void> {
   }
 }
 
+export async function getUserByUsername(username: string): Promise<any> {
+  const users = await getUsers();
+  return users.find((u: any) => u.username?.toLowerCase() === username.toLowerCase()) || null;
+}
+
+export async function createUser(username: string, passwordHash: string, role: string, token: string): Promise<any> {
+  const users = await getUsers();
+  const newUser = { username, passwordHash, role, token };
+  users.push(newUser);
+  await saveUsers(users);
+  return newUser;
+}
+
+export async function updateUserRole(username: string, role: string): Promise<void> {
+  const users = await getUsers();
+  const userIndex = users.findIndex((u: any) => u.username?.toLowerCase() === username.toLowerCase());
+  if (userIndex !== -1) {
+    users[userIndex].role = role;
+    await saveUsers(users);
+  }
+}
+
 async function readJsonDb() {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });

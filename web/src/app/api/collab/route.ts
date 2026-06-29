@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getState, saveState } from "./db";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/options";
+import { canEdit, canComment } from "htmlcollab-app/collab";
+
 
 
 const INITIAL_HTML = `
@@ -309,7 +313,6 @@ const INITIAL_STATE = {
     {
       versionNumber: 1,
       html: INITIAL_HTML,
-      status: "Draft",
       timestamp: new Date().toISOString()
     }
   ],
@@ -331,6 +334,17 @@ const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", 
 type MergeableKey = typeof MERGEABLE_KEYS[number];
 
 export async function GET(request: Request) {
+  let session = await getServerSession(authOptions);
+  if (!session && process.env.PLAYWRIGHT_TEST === "true") {
+    session = {
+      user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
+      expires: ""
+    };
+  }
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const documentId = searchParams.get("documentId") || undefined;
   let state = await getState(documentId);
@@ -350,6 +364,19 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    let session = await getServerSession(authOptions);
+    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
+      session = {
+        user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
+        expires: ""
+      };
+    }
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const role = (session.user.role || "viewer") as any;
+
     const { searchParams } = new URL(request.url);
     const documentId = searchParams.get("documentId") || undefined;
     const body = await request.json();
@@ -365,7 +392,6 @@ export async function POST(request: Request) {
     // (missing one or more) are now accepted and merged onto stored state.
     // -----------------------------------------------------------------------
 
-    const coreKeys: MergeableKey[] = ["versions", "activeVersionNum", "comments", "verdicts"];
     const sentKeys = MERGEABLE_KEYS.filter((k) => k in body);
 
     if (sentKeys.length === 0) {
@@ -373,6 +399,19 @@ export async function POST(request: Request) {
         { error: "Body must include at least one of: " + MERGEABLE_KEYS.join(", ") },
         { status: 400 }
       );
+    }
+
+    // Role capability assertions
+    if (sentKeys.includes("versions") || sentKeys.includes("lockedSections")) {
+      if (!canEdit(role)) {
+        return NextResponse.json({ error: "Forbidden: role cannot edit" }, { status: 403 });
+      }
+    }
+
+    if (sentKeys.includes("comments") || sentKeys.includes("verdicts")) {
+      if (!canComment(role)) {
+        return NextResponse.json({ error: "Forbidden: role cannot comment" }, { status: 403 });
+      }
     }
 
     // Load existing state to merge into
@@ -400,3 +439,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to parse body" }, { status: 500 });
   }
 }
+

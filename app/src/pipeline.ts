@@ -11,12 +11,12 @@
  *   4. Return typed PipelineResult with all metadata
  */
 
-import { ingestDocxFromBuffer, ingestDocxFromPath, ingestGDocHtml, IngestError } from "./ingest/index.js";
+import { ingestDocxFromBuffer, ingestDocxFromPath, ingestGDocHtml, ingestRawHtml, IngestError } from "./ingest/index.js";
 import { convertIR, type ConversionResult } from "./convert/index.js";
 import { ProgressReporter } from "./convert/progress.js";
 import type { TipTapDoc } from "./ir.js";
 
-export type InputKind = "docx-path" | "docx-buffer" | "gdoc-html";
+export type InputKind = "docx-path" | "docx-buffer" | "gdoc-html" | "raw-html";
 
 export interface PipelineInput {
   kind: InputKind;
@@ -27,6 +27,8 @@ export interface PipelineInput {
   fileName?: string;
   /** For gdoc-html: raw clipboard HTML from Google Docs. */
   gdocHtml?: string;
+  /** For raw-html: raw HTML or parsed Markdown string. */
+  rawHtml?: string;
 }
 
 export interface PipelineResult extends ConversionResult {
@@ -65,6 +67,10 @@ export async function runPipeline(
       case "gdoc-html":
         if (!input.gdocHtml) throw new Error("gdocHtml is required for gdoc-html input");
         ir = ingestGDocHtml(input.gdocHtml, input.fileName ?? "gdoc-paste");
+        break;
+      case "raw-html":
+        if (!input.rawHtml) throw new Error("rawHtml is required for raw-html input");
+        ir = ingestRawHtml(input.rawHtml, input.fileName ?? "upload");
         break;
       default: {
         const _exhaustive: never = input.kind;

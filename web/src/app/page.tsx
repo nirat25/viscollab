@@ -17,6 +17,9 @@ import {
   type Reply
 } from "htmlcollab-app/collab";
 import DocumentSurface, { type PendingSelection } from "../components/DocumentSurface";
+import AuthForms from "../components/AuthForms";
+import Header from "../components/Header";
+import CommentSidebar from "../components/CommentSidebar";
 
 // Token mapping has been moved to API server.
 const INITIAL_HTML = `
@@ -369,6 +372,7 @@ export default function Home() {
   const [newDocError, setNewDocError] = useState("");
   const [tourStep, setTourStep] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   
   // Auth state
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
@@ -1327,270 +1331,24 @@ export default function Home() {
         </div>
       </div>
     );
-  }
-
-  // 1. Auth Lock Screen
+  }  // 1. Auth Lock Screen
   if (!authToken || !currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-indigo-100 px-4 py-12 sm:px-6 lg:px-8 font-sans">
-        <div className="max-w-md w-full space-y-6 glass-panel p-8 rounded-3xl shadow-xl border border-white/80 animate-fade-in">
-          <div className="text-center">
-            <div className="mx-auto h-14 w-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Lock className="h-7 w-7 text-white" />
-            </div>
-            <h2 className="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight font-display">
-              HTMLCollab Workspace
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Sign in or create a new account to access the collaborative review dashboard.
-            </p>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex border border-slate-200/60 bg-slate-100/50 p-1 gap-1 rounded-2xl">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthTab("signin");
-                setAuthError("");
-              }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
-                authTab === "signin"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/30"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthTab("signup");
-                setAuthError("");
-              }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
-                authTab === "signup"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/30"
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
-
-          {authTab === "signin" ? (
-            <form className="space-y-4" onSubmit={handleSignIn}>
-              <div className="space-y-3">
-                <div>
-                  <label htmlFor="signin-username" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Username
-                  </label>
-                  <input
-                    id="signin-username"
-                    name="username"
-                    type="text"
-                    required
-                    data-testid="login-token-input"
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    placeholder="Enter username"
-                    value={usernameInput}
-                    onChange={(e) => setUsernameInput(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signin-password" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Password
-                  </label>
-                  <input
-                    id="signin-password"
-                    name="password"
-                    type="password"
-                    required
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    placeholder="Enter password"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {authError && (
-                <div className="text-red-600 text-xs font-medium flex items-center gap-1.5 animate-shake">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              <div>
-                <button
-                  type="submit"
-                  data-testid="login-submit-button"
-                  className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-xs font-bold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors shadow-md shadow-indigo-150 cursor-pointer"
-                >
-                  Sign In
-                </button>
-              </div>
-
-              {/* Mock Identities for testing */}
-              <div className="mt-4 pt-4 border-t border-slate-200/60">
-                <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
-                  Or mock login as:
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      setUsernameInput("alex");
-                      setPasswordInput("password");
-                      // Slight delay to allow state to settle, though technically
-                      // we should pass directly to handleSignIn but the event object
-                      // requires standard form structure. We can just simulate it:
-                      setTimeout(() => {
-                        e.preventDefault();
-                        const formEvent = { preventDefault: () => {} } as any;
-                        handleSignIn(formEvent);
-                      }, 50);
-                    }}
-                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <User className="h-3 w-3 text-indigo-500" />
-                    Reader (Alex)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      setUsernameInput("nirat");
-                      setPasswordInput("password");
-                      setTimeout(() => {
-                        e.preventDefault();
-                        const formEvent = { preventDefault: () => {} } as any;
-                        handleSignIn(formEvent);
-                      }, 50);
-                    }}
-                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <User className="h-3 w-3 text-emerald-500" />
-                    Author (Nirat)
-                  </button>
-                </div>
-              </div>
-            </form>
-          ) : (
-            <form className="space-y-4" onSubmit={handleSignUp}>
-              <div className="space-y-3">
-                <div>
-                  <label htmlFor="signup-username" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Username
-                  </label>
-                  <input
-                    id="signup-username"
-                    name="username"
-                    type="text"
-                    required
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    placeholder="Choose username"
-                    value={usernameInput}
-                    onChange={(e) => setUsernameInput(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-password" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Password
-                  </label>
-                  <input
-                    id="signup-password"
-                    name="password"
-                    type="password"
-                    required
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 placeholder-slate-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    placeholder="Choose password"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="signup-role" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Role
-                  </label>
-                  <select
-                    id="signup-role"
-                    name="role"
-                    required
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    value={roleInput}
-                    onChange={(e) => setRoleInput(e.target.value as any)}
-                  >
-                    <option value="owner">Owner</option>
-                    <option value="collaborator">Collaborator</option>
-                    <option value="commenter">Commenter</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                </div>
-              </div>
-
-              {authError && (
-                <div className="text-red-600 text-xs font-medium flex items-center gap-1.5 animate-shake">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              <div>
-                <button
-                  type="submit"
-                  className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-xs font-bold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors shadow-md shadow-indigo-150 cursor-pointer"
-                >
-                  Create Account
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-slate-200"></div>
-            </div>
-            <div className="relative flex justify-center text-[10px] uppercase">
-              <span className="px-2 bg-white/40 text-slate-400 font-bold">Quick Demo Logins</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => handleDemoLogin("Sam")}
-              data-testid="token-btn-owner"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Sam (Owner)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Nirat")}
-              data-testid="token-btn-collaborator"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Nirat (Collab)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Priya")}
-              data-testid="token-btn-commenter"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Priya (Commenter)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Alex")}
-              data-testid="token-btn-viewer"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Alex (Viewer)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-          </div>
-        </div>
-      </div>
+      <AuthForms
+        authTab={authTab}
+        setAuthTab={setAuthTab}
+        authError={authError}
+        setAuthError={setAuthError}
+        handleSignIn={handleSignIn}
+        handleSignUp={handleSignUp}
+        usernameInput={usernameInput}
+        setUsernameInput={setUsernameInput}
+        passwordInput={passwordInput}
+        setPasswordInput={setPasswordInput}
+        roleInput={roleInput}
+        setRoleInput={setRoleInput}
+        handleDemoLogin={handleDemoLogin}
+      />
     );
   }
 
@@ -1720,83 +1478,29 @@ export default function Home() {
       </aside>
 
       {/* Main Workspace Frame */}
-      <div className="pane-workspace-frame">
-        
-        {/* Premium Header */}
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="Open Workspace Explorer"
-            >
-              <List className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight font-display text-slate-900 flex items-center gap-2">
-                <FileText className="h-4.5 w-4.5 text-indigo-600" />
-                {documents.find((d) => d.id === activeDocumentId)?.name || "Loading Document..."}
-              </h1>
-              <p className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wider">Active Workspace Document</p>
-            </div>
-          </div>
-
-        <div className="flex items-center gap-3">
-          {/* Version Selector */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200/50">
-            <span className="text-xs font-bold text-slate-500 px-2">Version:</span>
-            <select
-              value={activeVersionNum}
-              onChange={(e) => setActiveVersionNum(Number(e.target.value))}
-              className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              {documentVersions.map((v) => (
-                <option key={v.versionNumber} value={v.versionNumber}>
-                  v{v.versionNumber} ({v.status})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Convert Document Action */}
-          {currentUser && (currentUser.role === "owner" || currentUser.role === "collaborator") && (
-            <button
-              onClick={() => setIsConvertModalOpen(true)}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-3 rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
-            >
-              ✨ Convert Document
-            </button>
-          )}
-
-          {/* Current User Badge */}
-          <div className="flex items-center gap-2.5 bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/60 shadow-sm">
-            <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold uppercase">
-              {currentUser.name[0]}
-            </div>
-            <div className="text-left leading-none">
-              <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
-              <p className="text-[10px] font-medium text-slate-400 capitalize">{currentUser.role}</p>
-            </div>
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors border border-slate-100 cursor-pointer"
-            title="Log Out"
-          >
-            <LogOut className="h-4.5 w-4.5" />
-          </button>
-        </div>
-      </header>
+      <div className="pane-workspace-frame">        {/* Premium Header */}
+        <Header
+          setIsSidebarOpen={setIsSidebarOpen}
+          documents={documents}
+          activeDocumentId={activeDocumentId}
+          documentVersions={documentVersions}
+          activeVersionNum={activeVersionNum}
+          setActiveVersionNum={setActiveVersionNum}
+          currentUser={currentUser}
+          setIsConvertModalOpen={setIsConvertModalOpen}
+          isCommentsOpen={isCommentsOpen}
+          setIsCommentsOpen={setIsCommentsOpen}
+          handleLogout={handleLogout}
+        />
 
       {/* Main Container */}
-      <div className="pane-main-content">
+      <div className={`pane-main-content transition-all ${isCommentsOpen ? "" : "max-w-5xl"}`}>
         
         {/* Left Hand Document Column */}
         <div className="pane-center-preview">
           
           {/* North-star Alignment Banner */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-slate-900 font-display flex items-center gap-1.5">
                 <UserCheck className="h-4 w-4 text-indigo-600" />
@@ -1945,327 +1649,27 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right Hand Sidebar Column */}
-        <aside 
-          id="tour-right-collab"
-          className={`pane-right-sidebar transition-all ${
-            tourStep === 3 ? "ring-4 ring-indigo-500 ring-offset-2 z-50 animate-pulse" : ""
-          }`}
-        >
-          <div className="pane-right-sidebar-scroll flex flex-col gap-6">
-          
-          {/* Add Comment card modal inline */}
-          {isAddingComment && (
-            <div className="bg-amber-50/70 border border-amber-200 p-5 rounded-2xl shadow-sm animate-fade-in space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                  <Plus className="h-4 w-4" />
-                  New Comment
-                </span>
-                <button onClick={() => setIsAddingComment(false)} className="text-amber-600 hover:text-amber-800 cursor-pointer">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {selectedText && (
-                <div className="bg-white/80 p-2.5 rounded-lg border border-amber-100 text-xs text-slate-700 leading-snug">
-                  <span className="font-bold block text-[10px] text-slate-400 uppercase tracking-wider mb-1 font-display">Highlighted context</span>
-                  "{selectedText}"
-                </div>
-              )}
-
-              <form onSubmit={handleAddComment} className="space-y-3">
-                <div>
-                  <textarea
-                    required
-                    data-testid="comment-body-input"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none placeholder-slate-400 font-sans"
-                    placeholder="Type your comment... Use @name for mentions"
-                    rows={3}
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col gap-1.5 flex-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Type</span>
-                    <select
-                      data-testid="comment-feedback-type"
-                      value={commentFeedbackType || ""}
-                      onChange={(e) => setCommentFeedbackType(e.target.value as any || null)}
-                      className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none"
-                    >
-                      <option value="question">❓ Question</option>
-                      <option value="approve">🟢 Approval</option>
-                      <option value="flag">🚩 Flag risk</option>
-                      <option value="needs">📋 Needs Data</option>
-                    </select>
-                  </div>
-
-                  <button
-                    type="submit"
-                    data-testid="comment-submit-button"
-                    className="mt-5 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3.5 rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* Sidebar Navigation Tabs */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 overflow-hidden min-h-[450px]">
-            <div className="flex border-b border-slate-200 bg-slate-50/50 p-1 gap-1">
-              <button
-                onClick={() => setActiveTab("threads")}
-                data-testid="sidebar-tab-threads"
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === "threads" 
-                    ? "bg-white text-indigo-700 shadow-sm" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
-                }`}
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                Threads
-              </button>
-              <button
-                onClick={() => setActiveTab("decisions")}
-                data-testid="sidebar-tab-decisions"
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === "decisions" 
-                    ? "bg-white text-indigo-700 shadow-sm" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
-                }`}
-              >
-                <CheckSquare className="h-3.5 w-3.5" />
-                Decisions
-              </button>
-              <button
-                onClick={() => setActiveTab("actions")}
-                data-testid="sidebar-tab-actions"
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === "actions" 
-                    ? "bg-white text-indigo-700 shadow-sm" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
-                }`}
-              >
-                <List className="h-3.5 w-3.5" />
-                Actions
-              </button>
-            </div>
-
-            {/* Sidebar Tab Area */}
-            <div className="p-4 flex-1 overflow-y-auto max-h-[500px]">
-              
-              {/* Tab 1: Threads */}
-              {activeTab === "threads" && (
-                <div className="space-y-4">
-                  {comments.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-xs">
-                      No discussion threads active.
-                    </div>
-                  ) : (
-                    comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        id={`sidebar-comment-${comment.id}`}
-                        data-testid="comment-item"
-                        className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-                          selectedCommentId === comment.id 
-                            ? "bg-indigo-50/50 border-indigo-200 ring-1 ring-indigo-200" 
-                            : "bg-slate-50/40 border-slate-200 hover:border-slate-300"
-                        }`}
-                        onClick={() => setSelectedCommentId(comment.id)}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-slate-800">{comment.author}</span>
-                            <span className="text-[9px] text-slate-400">
-                              {new Date(comment.createdAt).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {/* Feedback badges */}
-                            {comment.feedbackType === "needs" && (
-                              <span className="bg-amber-100 text-amber-800 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase">Needs Data</span>
-                            )}
-                            {comment.feedbackType === "flag" && (
-                              <span className="bg-rose-100 text-rose-800 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase">Risk</span>
-                            )}
-                            {comment.feedbackType === "approve" && (
-                              <span className="bg-emerald-100 text-emerald-800 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase">Approved</span>
-                            )}
-                            {comment.feedbackType === "question" && (
-                              <span className="bg-sky-100 text-sky-800 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase">Question</span>
-                            )}
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                              comment.lifecycle === "resolved" ? "bg-slate-200 text-slate-600" : "bg-indigo-100 text-indigo-700"
-                            }`}>
-                              {comment.lifecycle}
-                            </span>
-                          </div>
-                        </div>
-
-                        {comment.target.type === "text" && (
-                          <div className="text-[10px] text-slate-500 italic bg-white/70 p-1.5 rounded border border-slate-100 mb-2 truncate">
-                            "{comment.target.quote}"
-                          </div>
-                        )}
-
-                        <p className="text-xs text-slate-700 leading-relaxed font-sans">{comment.body}</p>
-
-                        {/* Replies */}
-                        {comment.replies.length > 0 && (
-                          <div className="mt-3 pl-3 border-l-2 border-indigo-100 space-y-2.5">
-                            {comment.replies.map((reply: any) => (
-                              <div key={reply.id} className="text-xs">
-                                <div className="flex items-center gap-1.5 text-[10px] mb-0.5">
-                                  <span className="font-bold text-slate-700">{reply.author}</span>
-                                  <span className="text-slate-400">
-                                    {new Date(reply.ts).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})}
-                                  </span>
-                                </div>
-                                <p className="text-slate-600 font-sans leading-relaxed">{reply.body}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Reply Form */}
-                        {selectedCommentId === comment.id && (
-                          <div className="mt-3 pt-3 border-t border-slate-200/60 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                            <form onSubmit={(e) => handleAddReply(e, comment.id)} className="flex items-center gap-1.5">
-                              <input
-                                type="text"
-                                className="flex-1 p-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
-                                placeholder="Type reply..."
-                                value={replyDrafts[comment.id] || ""}
-                                onChange={(e) => setReplyDrafts(prev => ({ ...prev, [comment.id]: e.target.value }))}
-                              />
-                              <button
-                                type="submit"
-                                className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors cursor-pointer"
-                              >
-                                <Send className="h-3 w-3" />
-                              </button>
-                            </form>
-
-                            {/* Resolve status button */}
-                            {currentUser.role !== "viewer" && (
-                              <button
-                                onClick={() => handleResolveComment(comment.id)}
-                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold self-start mt-1 flex items-center gap-1 cursor-pointer"
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                                {comment.lifecycle === "open" ? "Mark Resolved" : "Reopen Thread"}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* Tab 2: Decisions Log */}
-              {activeTab === "decisions" && (
-                <div className="space-y-4 font-sans">
-                  {decisions.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-xs">
-                      No decisions recorded yet. Add comments with "Approval" tags to populate.
-                    </div>
-                  ) : (
-                    decisions.map((item) => (
-                      <div 
-                        key={item.id} 
-                        data-testid="decision-item"
-                        className="bg-emerald-50/30 border border-emerald-100 p-4 rounded-xl space-y-2 hover-lift"
-                      >
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="font-bold text-emerald-800 flex items-center gap-1">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                            Approved
-                          </span>
-                          <span className="text-slate-400 font-medium">Ver: {item.versionId}</span>
-                        </div>
-                        <p className="text-xs text-slate-800 font-semibold">{item.body}</p>
-                        {item.target.type === "text" && (
-                          <p className="text-[10px] text-slate-500 italic">Context: "{item.target.quote}"</p>
-                        )}
-                        <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium pt-1">
-                          <span>Signed off by: {item.author}</span>
-                          <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* Tab 3: Action Items */}
-              {activeTab === "actions" && (
-                <div className="space-y-4 font-sans">
-                  {actionItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-xs">
-                      No flagged action items. Mark comments with "Risk" or "Needs Data".
-                    </div>
-                  ) : (
-                    actionItems.map((item) => {
-                      const assignees = getAssignees(item);
-                      return (
-                        <div 
-                          key={item.id} 
-                          data-testid="action-item"
-                          className="bg-rose-50/20 border border-rose-100 p-4 rounded-xl space-y-2 hover-lift"
-                        >
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="font-bold text-rose-800 flex items-center gap-1">
-                              {item.feedbackType === "needs" ? (
-                                <HelpCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                              ) : (
-                                <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                              )}
-                              {item.feedbackType === "needs" ? "Needs Data" : "Action Required"}
-                            </span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                              item.lifecycle === "resolved" ? "bg-slate-200 text-slate-600" : "bg-rose-100 text-rose-700"
-                            }`}>
-                              {item.lifecycle}
-                            </span>
-                          </div>
-                          
-                          <p className="text-xs text-slate-800 leading-relaxed">{item.body}</p>
-                          
-                          {/* Assignee badges */}
-                          {assignees.length > 0 && (
-                            <div className="flex items-center gap-1 pt-1.5">
-                              <span className="text-[9px] text-slate-400 font-semibold mr-1">Assignees:</span>
-                              {assignees.map(name => (
-                                <span key={name} className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8px] font-bold px-1.5 py-0.5 rounded">
-                                  @{name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium pt-1">
-                            <span>Raised by: {item.author}</span>
-                            <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          </div> {/* Closing pane-right-sidebar-scroll */}
-        </aside>
+        {/* Right Hand Sidebar Column */}        {isCommentsOpen && (
+          <CommentSidebar
+            tourStep={tourStep}
+            isAddingComment={isAddingComment}
+            setIsAddingComment={setIsAddingComment}
+            selectedText={selectedText}
+            handleAddComment={handleAddComment}
+            commentText={commentText}
+            setCommentText={setCommentText}
+            commentFeedbackType={commentFeedbackType}
+            setCommentFeedbackType={setCommentFeedbackType}
+            comments={comments}
+            selectedCommentId={selectedCommentId}
+            setSelectedCommentId={setSelectedCommentId}
+            replyDrafts={replyDrafts}
+            setReplyDrafts={setReplyDrafts}
+            handleAddReply={handleAddReply}
+            currentUser={currentUser}
+            handleResolveComment={handleResolveComment}
+          />
+        )}
       </div> {/* Closing pane-main-content */}
 
       {/* AI Surgical Sandbox Modal */}

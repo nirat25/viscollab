@@ -133,10 +133,10 @@ del {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 1.5rem;
-  padding: 1.5rem;
+  gap: 3rem;
+  padding: 1.5rem 2rem;
   width: 100%;
-  max-width: 80rem; /* max-w-7xl */
+  max-width: 95rem;
   margin: 0 auto;
   overflow: hidden; /* Prevent double scrollbar on outer container */
 }
@@ -145,6 +145,7 @@ del {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
   height: 100%;
   min-width: 0;
   overflow: hidden; /* Inner scroll only */

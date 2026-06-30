@@ -4,8 +4,8 @@ import crypto from "crypto";
 
 export async function POST(request: Request) {
   try {
-    const { username, password, role } = await request.json();
-    if (!username || !password || !role) {
+    const { username, password } = await request.json();
+    if (!username || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -29,7 +29,20 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ error: "Signups are restricted to invited members only." }, { status: 403 });
+    const newUser = {
+      username,
+      role: "owner",
+      passwordHash: hashPassword(password),
+      token: crypto.randomBytes(16).toString("hex"),
+    };
+    users.push(newUser);
+    await saveUsers(users);
+
+    return NextResponse.json({
+      success: true,
+      token: newUser.token,
+      user: { name: newUser.username, role: newUser.role },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to signup" }, { status: 500 });
   }

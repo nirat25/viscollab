@@ -7,6 +7,7 @@ import {
   CornerDownRight, Calendar, UserCheck, Plus, Eye, CheckSquare, List, Send, FileText
 } from "lucide-react";
 import { diff_match_patch } from "diff-match-patch";
+import { useSession, signOut } from "next-auth/react";
 
 import {
   canView,
@@ -375,12 +376,13 @@ export default function Home() {
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   
   // Auth state
+  const { data: session } = useSession();
+  const currentUser = session?.user ? { name: session.user.name as string, role: session.user.role as "owner" | "collaborator" | "commenter" | "viewer" } : null;
+  const authToken = session?.user?.token as string | null;
+
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  const [roleInput, setRoleInput] = useState<"owner" | "collaborator" | "commenter" | "viewer">("collaborator");
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<{ name: string; role: "owner" | "collaborator" | "commenter" | "viewer" } | null>(null);
   const [authError, setAuthError] = useState("");
 
   // Document version state
@@ -656,52 +658,6 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
-
-    // Initial load from URL query
-    const params = new URLSearchParams(window.location.search);
-    const queryToken = params.get("token");
-    if (queryToken) {
-      localStorage.setItem("collab_token", queryToken);
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, "", newUrl);
-    }
-
-    // Load and validate from localStorage
-    const savedToken = localStorage.getItem("collab_token");
-    if (savedToken) {
-      fetch("/api/auth/validate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ token: savedToken }),
-      })
-        .then((res) => {
-          if (!res.ok) {
-            throw new Error("Invalid token");
-          }
-          return res.json();
-        })
-        .then((data) => {
-          if (data.success && data.user) {
-            const role = data.user.role;
-            if (role === "owner" || role === "collaborator" || role === "commenter" || role === "viewer") {
-              setAuthToken(savedToken);
-              setCurrentUser({ name: data.user.name, role });
-            } else {
-              throw new Error("Invalid role");
-            }
-          } else {
-            throw new Error("Invalid token validation response");
-          }
-        })
-        .catch(() => {
-          localStorage.removeItem("collab_token");
-          setAuthToken(null);
-          setCurrentUser(null);
-        });
-    }
-
   }, []);
 
   // Poll state from server.
@@ -762,101 +718,8 @@ export default function Home() {
     };
   }, [mounted, authToken, activeDocumentId]);
 
-  // Auth handlers
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch("/api/auth/signin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const role = data.user.role;
-        if (role === "owner" || role === "collaborator" || role === "commenter" || role === "viewer") {
-          setAuthToken(data.token);
-          setCurrentUser({ name: data.user.name, role });
-          localStorage.setItem("collab_token", data.token);
-          setAuthError("");
-          setUsernameInput("");
-          setPasswordInput("");
-        } else {
-          setAuthError("Invalid user role received");
-        }
-      } else {
-        setAuthError(data.error || "Invalid username or password");
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "An error occurred during sign in");
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput, role: roleInput }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const role = data.user.role;
-        if (role === "owner" || role === "collaborator" || role === "commenter" || role === "viewer") {
-          setAuthToken(data.token);
-          setCurrentUser({ name: data.user.name, role });
-          localStorage.setItem("collab_token", data.token);
-          setAuthError("");
-          setUsernameInput("");
-          setPasswordInput("");
-        } else {
-          setAuthError("Invalid user role received");
-        }
-      } else {
-        setAuthError(data.error || "Failed to sign up");
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "An error occurred during sign up");
-    }
-  };
-
-  const handleDemoLogin = async (username: string) => {
-    try {
-      const res = await fetch("/api/auth/signin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password: "password" }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const role = data.user.role;
-        if (role === "owner" || role === "collaborator" || role === "commenter" || role === "viewer") {
-          setAuthToken(data.token);
-          setCurrentUser({ name: data.user.name, role });
-          localStorage.setItem("collab_token", data.token);
-          setAuthError("");
-        } else {
-          setAuthError("Invalid user role received");
-        }
-      } else {
-        setAuthError(data.error || `Failed to log in as ${username}`);
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "An error occurred during demo login");
-    }
-  };
-
   const handleLogout = () => {
-    localStorage.removeItem("collab_token");
-    setAuthToken(null);
-    setCurrentUser(null);
+    signOut({ redirect: false });
   };
 
 
@@ -1339,15 +1202,10 @@ export default function Home() {
         setAuthTab={setAuthTab}
         authError={authError}
         setAuthError={setAuthError}
-        handleSignIn={handleSignIn}
-        handleSignUp={handleSignUp}
         usernameInput={usernameInput}
         setUsernameInput={setUsernameInput}
         passwordInput={passwordInput}
         setPasswordInput={setPasswordInput}
-        roleInput={roleInput}
-        setRoleInput={setRoleInput}
-        handleDemoLogin={handleDemoLogin}
       />
     );
   }

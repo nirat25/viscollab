@@ -1422,33 +1422,14 @@ export default function Home() {
                 </span>
               </div>
 
-              {canEdit(currentUser.role) && (
+              {canEdit(currentUser.role) && currentVersion.status !== "Draft" && (
                 <div>
-                  {currentVersion.status === "Draft" ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleRegenerateDraft}
-                        disabled={isRegenerating}
-                        className="text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={lockedSections.length > 0 ? "Regenerate draft, preserving locked sections" : "Regenerate entire draft via LLM"}
-                      >
-                        {isRegenerating ? "Regenerating..." : "Regenerate Draft"}
-                      </button>
-                      <button
-                        onClick={handlePromoteToLive}
-                        className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
-                      >
-                        Promote to Live
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleCreateNewDraft}
-                      className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
-                    >
-                      Create New Draft
-                    </button>
-                  )}
+                  <button
+                    onClick={handleCreateNewDraft}
+                    className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
+                  >
+                    Create New Draft
+                  </button>
                 </div>
               )}
             </div>
@@ -1482,27 +1463,6 @@ export default function Home() {
                 <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
               )}
 
-              {/* Surgical Block Guide & Panel */}
-              <div 
-                id="tour-section-tools"
-                className={`border-t border-slate-100 pt-6 mt-6 flex flex-col gap-3 transition-all ${
-                  tourStep === 2 ? "ring-4 ring-indigo-500 ring-offset-2 p-3 rounded-xl bg-indigo-50/20 border-indigo-200/30 z-50 animate-pulse" : ""
-                }`}
-              >
-                <div className="bg-indigo-50/50 rounded-2xl border border-indigo-100/50 p-4 font-sans">
-                  <div className="flex gap-3">
-                    <div className="h-8 w-8 bg-indigo-100/60 rounded-lg flex items-center justify-center text-indigo-600 shrink-0">
-                      <Sparkles className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wide">Surgical Block Editing</h4>
-                      <p className="text-xs text-indigo-855 mt-1 leading-relaxed">
-                        Viscollab structures documents into logical blocks (like <strong>Background</strong> or <strong>Required Actions</strong>). Hover over any section in the preview above to display inline AI rewriting and commenting tools. This edits only the target block, guaranteeing 100% containment of all other sections.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

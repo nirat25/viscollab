@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Users, UserPlus, Loader2, Shield } from "lucide-react";
 
 interface TeamSettingsModalProps {
@@ -14,8 +15,10 @@ export default function TeamSettingsModal({ isOpen, onClose }: TeamSettingsModal
   const [inviteRole, setInviteRole] = useState("collaborator");
   const [isInviting, setIsInviting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     if (isOpen) {
       fetchMembers();
       setSuccessMsg("");
@@ -72,9 +75,30 @@ export default function TeamSettingsModal({ isOpen, onClose }: TeamSettingsModal
     }
   };
 
-  if (!isOpen) return null;
+  const handleRoleChange = async (username: string, newRole: string) => {
+    const previousMembers = [...members];
+    setMembers(members.map(m => m.username === username ? { ...m, role: newRole } : m));
+    
+    try {
+      const res = await fetch("/api/team/members", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, role: newRole })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setMembers(previousMembers);
+        setError(data.error || "Failed to update role");
+      }
+    } catch (err: any) {
+      setMembers(previousMembers);
+      setError(err.message || "An error occurred updating role");
+    }
+  };
 
-  return (
+  if (!isOpen || !mounted) return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
@@ -167,11 +191,16 @@ export default function TeamSettingsModal({ isOpen, onClose }: TeamSettingsModal
                         </div>
                       </div>
                       
-                      {member.role === 'owner' && (
-                        <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-semibold uppercase tracking-wider">
-                          Owner
-                        </span>
-                      )}
+                      <select
+                        value={member.role}
+                        onChange={(e) => handleRoleChange(member.username, e.target.value)}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs font-semibold capitalize bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      >
+                        <option value="owner">Owner</option>
+                        <option value="collaborator">Collaborator</option>
+                        <option value="commenter">Commenter</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
                     </li>
                   ))}
                 </ul>
@@ -181,6 +210,7 @@ export default function TeamSettingsModal({ isOpen, onClose }: TeamSettingsModal
 
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
-import { getUsers, saveUsers } from "../../collab/db";
+import { getDocuments, saveDocuments, getDocumentRole } from "../../collab/db";
 
 export async function POST(request: Request) {
   try {
@@ -16,40 +16,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "owner") {
-      return NextResponse.json({ error: "Forbidden: only owners can invite teammates" }, { status: 403 });
-    }
-
-    const { username, role } = await request.json();
-    if (!username || !role) {
+    const { username, role, documentId } = await request.json();
+    if (!username || !role || !documentId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const users = await getUsers();
-    const existingUser = users.find(
-      (u: any) => u.username?.toLowerCase() === username.toLowerCase()
-    );
-
-    if (existingUser) {
-      if (existingUser.passwordHash) {
-        return NextResponse.json({ error: "User already exists" }, { status: 400 });
-      } else {
-        // Update invited user role
-        existingUser.role = role;
-        await saveUsers(users);
-        return NextResponse.json({ success: true, message: "Teammate invite updated successfully" });
-      }
+    const userRole = await getDocumentRole(documentId, session.user.name!);
+    if (userRole !== "owner") {
+      return NextResponse.json({ error: "Forbidden: only owners can invite teammates" }, { status: 403 });
     }
 
-    const newUser = {
-      username,
-      role,
-      passwordHash: "", // pending registration
-      token: ""
-    };
+    const docs = await getDocuments();
+    const doc = docs.find((d: any) => d.id === documentId);
+    if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    if (!doc.members) doc.members = [];
 
-    users.push(newUser);
-    await saveUsers(users);
+    const existingMember = doc.members.find((m: any) => m.username?.toLowerCase() === username.toLowerCase());
+    if (existingMember) {
+      existingMember.role = role;
+      await saveDocuments(docs);
+      return NextResponse.json({ success: true, message: "Teammate role updated successfully" });
+    }
+
+    doc.members.push({ username, role });
+    await saveDocuments(docs);
 
     return NextResponse.json({ success: true, message: "Teammate invited successfully" });
   } catch (e: any) {

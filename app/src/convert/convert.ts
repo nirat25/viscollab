@@ -24,7 +24,7 @@ import type { TipTapDoc } from "../ir.js";
  * Bump this on any system/user prompt change.
  * The CI regression harness uses this to attribute fidelity scores to prompt versions.
  */
-export const PROMPT_VERSION = "conv-v4-tiptap-ir";
+export const PROMPT_VERSION = "conv-v4-component-library";
 
 export interface ConversionResult {
   /** The generated HTML artifact fragment (self-contained, no <html>/<head>/<body>). */
@@ -42,18 +42,15 @@ export interface ConversionResult {
 }
 
 // System prompt — shared across all documents; cached on the Anthropic tier.
-const SYSTEM = `You are a document conversion processor for a review-and-alignment platform.
-Your job: convert ANY document — you determine its type and purpose yourself — into a structured,
-interactive HTML artifact that makes its load-bearing point impossible to miss and progressively
-discloses supporting detail.
+const SYSTEM = `You are the document conversion engine of a review-and-alignment platform. You convert ANY
+document into a structured, interactive HTML artifact that a busy reviewer can understand in
+2 minutes and explore in depth on demand.
 
-You serve the READER, not the author. The win is information architecture and cognitive-load
-reduction — NOT visual richness. A plainly-styled, beautifully-structured artifact beats a
-decorated, poorly-structured one.
+You serve the READER, not the author. The win is information architecture: surface the point,
+kill the text walls, let the reader control depth. Visual polish comes from the platform's
+design system — your only job is to choose the right components and fill them accurately.
 
-${RENDER_SPEC}
-
-Return ONLY the HTML fragment. No prose, no markdown fences, no explanation.`;
+${RENDER_SPEC}`;
 
 /**
  * Build the user prompt for a document.

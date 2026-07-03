@@ -21,6 +21,8 @@ import DocumentSurface, { type PendingSelection } from "../components/DocumentSu
 import AuthForms from "../components/AuthForms";
 import Header from "../components/Header";
 import CommentSidebar from "../components/CommentSidebar";
+import WorkspaceSelector from "../components/WorkspaceSelector";
+import WorkspaceSettingsModal from "../components/WorkspaceSettingsModal";
 
 // Token mapping has been moved to API server.
 const INITIAL_HTML = `
@@ -197,6 +199,113 @@ const INITIAL_HTML = `
     border-top: 1px solid #eee;
     padding-top: 0.75rem;
   }
+
+  /* --- Legacy AI Generated Toggles (Sections, Levers, QA) --- */
+  .section-header, .lever-header, .qa-q {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: #fdfdfc;
+    border: 1px solid #e0e0d8;
+    border-radius: 6px;
+    margin-top: 1.25rem;
+    margin-bottom: 0.25rem;
+    transition: background 0.2s;
+  }
+  
+  .section-header:hover, .lever-header:hover, .qa-q:hover {
+    background: #f7f7f0;
+  }
+
+  .section-header.open, .lever-header.open, .qa-q.open {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid transparent;
+    margin-bottom: 0;
+  }
+
+  .section-body, .lever-body, .qa-a {
+    display: none;
+    padding: 1rem 1.25rem;
+    border: 1px solid #e0e0d8;
+    border-top: none;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    background: #fff;
+    margin-bottom: 1.25rem;
+  }
+
+  .section-body.open, .lever-body.open, .qa-a.open {
+    display: block;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .section-title, .lever-name, .qa-q-text {
+    flex-grow: 1;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #2a6e3f;
+  }
+
+  .section-summary {
+    font-size: 0.85rem;
+    color: #666;
+  }
+
+  .chevron, .qa-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: #888;
+    font-size: 0.75rem;
+  }
+
+  .chevron.open, .qa-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  /* Specific styles for icons and tags */
+  .section-icon, .qa-q-icon {
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: #f0f0ea;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  .lever-rank {
+    font-family: 'Courier New', monospace;
+    background: #2a6e3f;
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.8rem;
+  }
+
+  .lever-tag {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    background: #eef2ff;
+    color: #4f46e5;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 </style>
 
 <div class="vcd-wrap" id="top">
@@ -364,10 +473,12 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
 
   // Document catalog and onboarding states
-  const [documents, setDocuments] = useState<{ id: string; name: string; createdAt: string }[]>([]);
+  const [documents, setDocuments] = useState<{ id: string; name: string; createdAt: string; members?: { username: string; role: string }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeDocumentId, setActiveDocumentId] = useState("doc-1");
   const [isCreateDocModalOpen, setIsCreateDocModalOpen] = useState(false);
+  const [isWorkspaceSettingsOpen, setIsWorkspaceSettingsOpen] = useState(false);
   const [newDocName, setNewDocName] = useState("");
   const [newDocHtml, setNewDocHtml] = useState("");
   const [newDocError, setNewDocError] = useState("");
@@ -379,6 +490,16 @@ export default function Home() {
   const { data: session } = useSession();
   const currentUser = session?.user ? { name: session.user.name as string, role: session.user.role as "owner" | "collaborator" | "commenter" | "viewer" } : null;
   const authToken = session?.user?.token as string | null;
+
+  const activeDocument = documents.find(d => d.id === activeDocumentId);
+  const activeDocumentRole = React.useMemo(() => {
+    if (!currentUser) return "viewer";
+    if (!activeDocument || !activeDocument.members) return "viewer";
+    const member = activeDocument.members.find(m => m.username.toLowerCase() === currentUser.name.toLowerCase());
+    return (member?.role || "viewer") as "owner" | "collaborator" | "commenter" | "viewer";
+  }, [currentUser, activeDocument]);
+
+  const activeDocumentUser = currentUser ? { ...currentUser, role: activeDocumentRole } : null;
 
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [usernameInput, setUsernameInput] = useState("");
@@ -442,9 +563,24 @@ export default function Home() {
   const [conversionStep, setConversionStep] = useState(0);
   const [convertError, setConvertError] = useState("");
 
-  const fetchDocuments = async () => {
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("vc_active_doc");
+      if (stored) {
+        setActiveDocumentId(stored);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && activeDocumentId) {
+      localStorage.setItem("vc_active_doc", activeDocumentId);
+    }
+  }, [activeDocumentId]);
+
+  const fetchDocuments = async (workspaceId: string) => {
     try {
-      const res = await fetch("/api/collab/documents");
+      const res = await fetch(`/viscollab/api/collab/documents?workspaceId=${workspaceId}`);
       const data = await res.json();
       if (data.success && data.documents) {
         setDocuments(data.documents);
@@ -458,7 +594,7 @@ export default function Home() {
 
   const loadDocumentState = async (docId: string) => {
     try {
-      const res = await fetch(`/api/collab?documentId=${docId}`);
+      const res = await fetch(`/viscollab/api/collab?documentId=${docId}`);
       const data = await res.json();
       if (data.versions) setDocumentVersions(data.versions);
       if (data.activeVersionNum) setActiveVersionNum(data.activeVersionNum);
@@ -487,10 +623,10 @@ export default function Home() {
   }, [mounted, authToken, currentUser]);
 
   useEffect(() => {
-    if (authToken) {
-      fetchDocuments();
+    if (authToken && activeWorkspaceId) {
+      fetchDocuments(activeWorkspaceId);
     }
-  }, [authToken]);
+  }, [authToken, activeWorkspaceId]);
 
   useEffect(() => {
     if (!mounted || !authToken) return;
@@ -517,14 +653,15 @@ export default function Home() {
     if (!newDocName.trim() || !newDocHtml.trim()) return;
     setNewDocError("");
     try {
-      const res = await fetch("/api/collab/documents", {
+      const res = await fetch("/viscollab/api/collab/documents", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           name: newDocName,
-          html: newDocHtml
+          html: newDocHtml,
+          workspaceId: activeWorkspaceId
         })
       });
       const data = await res.json();
@@ -532,7 +669,7 @@ export default function Home() {
         setNewDocName("");
         setNewDocHtml("");
         setIsCreateDocModalOpen(false);
-        await fetchDocuments();
+        if (activeWorkspaceId) await fetchDocuments(activeWorkspaceId);
         setActiveDocumentId(data.document.id);
       } else {
         setNewDocError(data.error || "Failed to create document.");
@@ -556,7 +693,7 @@ export default function Home() {
         }
         const formData = new FormData();
         formData.append("file", docxFile);
-        response = await fetch("/api/collab/convert", {
+        response = await fetch("/viscollab/api/collab/convert", {
           method: "POST",
           body: formData,
         });
@@ -566,7 +703,7 @@ export default function Home() {
           setIsConverting(false);
           return;
         }
-        response = await fetch("/api/collab/convert", {
+        response = await fetch("/viscollab/api/collab/convert", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -595,7 +732,7 @@ export default function Home() {
         }
 
         // Post to the documents API to create a new document in the catalog
-        const createRes = await fetch("/api/collab/documents", {
+        const createRes = await fetch("/viscollab/api/collab/documents", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -603,6 +740,7 @@ export default function Home() {
           body: JSON.stringify({
             name: docName,
             html: returnedHtml,
+            workspaceId: activeWorkspaceId
           }),
         });
 
@@ -615,7 +753,7 @@ export default function Home() {
           setIsConvertModalOpen(false);
 
           // Refetch document list and switch to the new document
-          await fetchDocuments();
+          if (activeWorkspaceId) await fetchDocuments(activeWorkspaceId);
           setActiveDocumentId(createData.document.id);
         } else {
           setConvertError(createData.error || "Failed to save the converted document.");
@@ -639,7 +777,7 @@ export default function Home() {
     newVerdicts: typeof verdicts
   ) => {
     try {
-      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
+      await fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -689,7 +827,7 @@ export default function Home() {
       // Don't pull server state out from under an open composer / sandbox.
       if (pollPausedRef.current) return;
 
-      fetch(`/api/collab?documentId=${activeDocumentId}`)
+      fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`)
         .then((res) => res.json())
         .then((data) => {
           if (!isSubscribed || pollPausedRef.current) return;
@@ -779,12 +917,12 @@ export default function Home() {
   // composer pre-filled. (Hover, highlighting, and selection geometry all live
   // inside DocumentSurface now — no per-mousemove React state in the parent.)
   const handleCommentSelection = React.useCallback((sel: PendingSelection) => {
-    if (!currentUser || !canComment(currentUser.role)) return;
+    if (!currentUser || !canComment(activeDocumentRole)) return;
     setSelectedText(sel.quote);
     setSelectedRange({ quote: sel.quote, prefix: sel.prefix, suffix: sel.suffix });
     setCommentTargetSection(sel.sectionId);
     setIsAddingComment(true);
-  }, [currentUser]);
+  }, [currentUser, activeDocumentRole]);
 
   // Whole-section comment via the hover toolbar button.
   const handleCommentSection = React.useCallback((sectionId: string) => {
@@ -936,7 +1074,7 @@ export default function Home() {
     const oldSectionHtml = sectionEl ? sectionEl.outerHTML : "";
 
     try {
-      const res = await fetch("/api/collab/edit", {
+      const res = await fetch("/viscollab/api/collab/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1068,7 +1206,7 @@ export default function Home() {
     setLockedSections(updatedLocks);
 
     try {
-      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
+      await fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lockedSections: updatedLocks })
@@ -1120,7 +1258,7 @@ export default function Home() {
     if (currentVersion.status !== "Draft") return;
     setIsRegenerating(true);
     try {
-      const res = await fetch("/api/collab/regenerate", {
+      const res = await fetch("/viscollab/api/collab/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1239,6 +1377,15 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Workspace Selector */}
+        <div className="p-3 border-b border-slate-800">
+          <WorkspaceSelector 
+            activeWorkspaceId={activeWorkspaceId} 
+            onSelectWorkspace={setActiveWorkspaceId}
+            onOpenSettings={() => setIsWorkspaceSettingsOpen(true)}
+          />
+        </div>
+
         {/* Search Documents */}
         <div className="p-3 border-b border-slate-800">
           <div className="relative">
@@ -1282,7 +1429,10 @@ export default function Home() {
                 return (
                   <button
                     key={doc.id}
-                    onClick={() => setActiveDocumentId(doc.id)}
+                    onClick={() => {
+                      setActiveDocumentId(doc.id);
+                      setIsSidebarOpen(false);
+                    }}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-xs font-semibold transition-all cursor-pointer ${
                       isActive
                         ? "bg-indigo-600 text-white font-bold"
@@ -1344,11 +1494,12 @@ export default function Home() {
           documentVersions={documentVersions}
           activeVersionNum={activeVersionNum}
           setActiveVersionNum={setActiveVersionNum}
-          currentUser={currentUser}
+          currentUser={activeDocumentUser}
           setIsConvertModalOpen={setIsConvertModalOpen}
           isCommentsOpen={isCommentsOpen}
           setIsCommentsOpen={setIsCommentsOpen}
           handleLogout={handleLogout}
+          activeWorkspaceId={activeWorkspaceId}
         />
 
       {/* Main Container */}
@@ -1422,7 +1573,7 @@ export default function Home() {
                 </span>
               </div>
 
-              {canEdit(currentUser.role) && currentVersion.status !== "Draft" && (
+              {canEdit(activeDocumentRole) && currentVersion.status !== "Draft" && (
                 <div>
                   <button
                     onClick={handleCreateNewDraft}
@@ -1449,8 +1600,8 @@ export default function Home() {
                   sectionsMetadata={sectionsMetadata}
                   sectionIds={sectionIds}
                   selectedCommentId={selectedCommentId}
-                  canEdit={canEdit(currentUser.role)}
-                  canComment={canComment(currentUser.role)}
+                  canEdit={canEdit(activeDocumentRole)}
+                  canComment={canComment(activeDocumentRole)}
                   previewContainerRef={previewContainerRef}
                   onSelectComment={handleSelectComment}
                   onOpenAiEdit={handleOpenAiEdit}
@@ -1484,11 +1635,17 @@ export default function Home() {
             replyDrafts={replyDrafts}
             setReplyDrafts={setReplyDrafts}
             handleAddReply={handleAddReply}
-            currentUser={currentUser}
+            currentUser={activeDocumentUser}
             handleResolveComment={handleResolveComment}
           />
         )}
       </div> {/* Closing pane-main-content */}
+
+      <WorkspaceSettingsModal 
+        isOpen={isWorkspaceSettingsOpen}
+        onClose={() => setIsWorkspaceSettingsOpen(false)}
+        workspaceId={activeWorkspaceId}
+      />
 
       {/* AI Surgical Sandbox Modal */}
       {sandboxSectionId && (
@@ -1660,7 +1817,7 @@ export default function Home() {
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  Upload .docx File
+                  Upload File (.docx, .md)
                 </button>
                 <button
                   type="button"
@@ -1679,20 +1836,20 @@ export default function Home() {
               {convertOption === "docx" && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
-                    Select Word Document (.docx)
+                    Select Document (.docx, .md)
                   </label>
                   <div className="flex items-center justify-center w-full">
                     <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-200 border-dashed rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100/50 transition-colors">
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
                         <FileText className="h-8 w-8 text-slate-400 mb-2" />
                         <p className="text-xs text-slate-600 font-semibold mb-1">
-                          {docxFile ? docxFile.name : "Click to select a .docx file"}
+                          {docxFile ? docxFile.name : "Click to select a .docx or .md file"}
                         </p>
-                        <p className="text-[10px] text-slate-400">Microsoft Word files only</p>
+                        <p className="text-[10px] text-slate-400">Word or Markdown files</p>
                       </div>
                       <input
                         type="file"
-                        accept=".docx"
+                        accept=".docx,.md"
                         className="hidden"
                         onChange={(e) => {
                           if (e.target.files && e.target.files.length > 0) {

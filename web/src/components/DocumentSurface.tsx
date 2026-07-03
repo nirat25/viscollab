@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { locate, type Comment } from "htmlcollab-app/collab";
+import { initVcdRuntime } from "@/lib/vcdRuntime";
 import SectionToolbar from "./SectionToolbar";
 import SelectionCommentPill from "./SelectionCommentPill";
 
@@ -164,6 +165,13 @@ export default function DocumentSurface({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html, docId, versionNumber]);
+
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art) return;
+    return initVcdRuntime(art);
+  }, [html, docId, versionNumber]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   /* persist <details> open-state on toggle (capture phase: native toggle bubbles oddly) */
   const persistDetails = useCallback(() => {

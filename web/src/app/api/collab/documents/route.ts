@@ -4,13 +4,19 @@ import crypto from "crypto";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     let session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const documents = await getDocuments();
+    const { searchParams } = new URL(request.url);
+    const workspaceId = searchParams.get('workspaceId');
+    
+    let documents = await getDocuments();
+    if (workspaceId) {
+      documents = documents.filter((doc: any) => doc.workspaceId === workspaceId);
+    }
     return NextResponse.json({ success: true, documents });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to fetch documents" }, { status: 500 });
@@ -24,16 +30,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, html } = await request.json();
-    if (!name || !html) {
-      return NextResponse.json({ error: "Missing name or html" }, { status: 400 });
+    const { name, html, workspaceId } = await request.json();
+    if (!name || !html || !workspaceId) {
+      return NextResponse.json({ error: "Missing name, html or workspaceId" }, { status: 400 });
     }
 
     const documentId = `doc-${crypto.randomUUID()}`;
     const newDoc = {
       id: documentId,
       name,
-      createdAt: new Date().toISOString()
+      workspaceId,
+      createdAt: new Date().toISOString(),
+      members: [
+        { username: session.user.name || "", role: "owner" }
+      ]
     };
 
     const documents = await getDocuments();

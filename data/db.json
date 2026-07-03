@@ -1,0 +1,16 @@
+{
+  "state": null,
+  "users": [],
+  "workspaces": [
+    {
+      "id": "ws-default",
+      "name": "Default Workspace",
+      "members": [
+        {
+          "username": "admin",
+          "role": "admin"
+        }
+      ]
+    }
+  ]
+}

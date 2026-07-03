@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Users, UserPlus, Loader2, Shield, Trash2 } from "lucide-react";
+import { X, Users, UserPlus, Loader2, Shield } from "lucide-react";
 
-interface TeamSettingsModalProps {
+interface WorkspaceSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activeDocumentId: string;
-  activeWorkspaceId: string | null;
+  workspaceId: string | null;
 }
 
-export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, activeWorkspaceId }: TeamSettingsModalProps) {
+export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }: WorkspaceSettingsModalProps) {
   const [members, setMembers] = useState<{username: string, role: string}[]>([]);
+  const [workspaceName, setWorkspaceName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [inviteUsername, setInviteUsername] = useState("");
@@ -18,47 +18,35 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
   const [isInviting, setIsInviting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [mounted, setMounted] = useState(false);
-  const [workspaceMembers, setWorkspaceMembers] = useState<{username: string, role: string}[]>([]);
 
   useEffect(() => {
     setMounted(true);
-    if (isOpen) {
-      fetchMembers();
-      fetchWorkspaceMembers();
+    if (isOpen && workspaceId) {
+      fetchWorkspaceDetails();
       setSuccessMsg("");
       setError("");
     }
-  }, [isOpen, activeWorkspaceId]);
+  }, [isOpen, workspaceId]);
 
-  const fetchWorkspaceMembers = async () => {
-    if (!activeWorkspaceId) return;
+  const fetchWorkspaceDetails = async () => {
+    setIsLoading(true);
+    setError("");
     try {
       const res = await fetch(`/viscollab/api/collab/workspaces`);
       const data = await res.json();
       if (res.ok) {
-        const ws = data.find((w: any) => w.id === activeWorkspaceId);
+        const ws = data.find((w: any) => w.id === workspaceId);
         if (ws) {
-          setWorkspaceMembers(ws.members || []);
+          setWorkspaceName(ws.name);
+          setMembers(ws.members || []);
+        } else {
+          setError("Workspace not found");
         }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const fetchMembers = async () => {
-    setIsLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/team/members?documentId=${activeDocumentId}`);
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setMembers(data.members || []);
       } else {
-        setError(data.error || "Failed to fetch members");
+        setError(data.error || "Failed to fetch workspaces");
       }
     } catch (err: any) {
-      setError(err.message || "An error occurred fetching members");
+      setError(err.message || "An error occurred fetching workspaces");
     } finally {
       setIsLoading(false);
     }
@@ -66,25 +54,25 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteUsername.trim()) return;
+    if (!inviteUsername.trim() || !workspaceId) return;
     
     setIsInviting(true);
     setError("");
     setSuccessMsg("");
     
     try {
-      const res = await fetch("/viscollab/api/team/invite", {
+      const res = await fetch("/viscollab/api/collab/workspaces/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, documentId: activeDocumentId })
+        body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, workspaceId })
       });
       const data = await res.json();
       
       if (res.ok && data.success) {
-        setSuccessMsg(data.message || "User invited successfully");
+        setSuccessMsg("User invited to workspace successfully");
         setInviteUsername("");
         setInviteRole("collaborator");
-        await fetchMembers(); // Refresh the list
+        await fetchWorkspaceDetails(); // Refresh the list
       } else {
         setError(data.error || "Failed to invite user");
       }
@@ -95,47 +83,28 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
     }
   };
 
-  const handleRoleChange = async (username: string, newRole: string) => {
-    const previousMembers = [...members];
-    setMembers(members.map(m => m.username === username ? { ...m, role: newRole } : m));
+  const handleRemove = async (username: string) => {
+    if (!workspaceId) return;
+    
+    setError("");
+    setSuccessMsg("");
     
     try {
-      const res = await fetch(`/api/team/members?documentId=${activeDocumentId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, role: newRole })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setMembers(previousMembers);
-        setError(data.error || "Failed to update role");
-      }
-    } catch (err: any) {
-      setMembers(previousMembers);
-      setError(err.message || "An error occurred updating role");
-    }
-  };
-
-  const handleRemoveMember = async (username: string) => {
-    const previousMembers = [...members];
-    setMembers(members.filter(m => m.username !== username));
-    
-    try {
-      const res = await fetch("/viscollab/api/team/members", {
+      const res = await fetch("/viscollab/api/collab/workspaces/remove", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, workspaceId })
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        setMembers(previousMembers);
-        setError(data.error || "Failed to remove user");
+      
+      if (res.ok && data.success) {
+        setSuccessMsg(`User ${username} removed successfully`);
+        await fetchWorkspaceDetails(); // Refresh the list
       } else {
-        setSuccessMsg(data.message || "User removed");
+        setError(data.error || "Failed to remove user");
       }
     } catch (err: any) {
-      setMembers(previousMembers);
-      setError(err.message || "An error occurred removing user");
+      setError(err.message || "An error occurred removing the user");
     }
   };
 
@@ -149,9 +118,9 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
-              <Users className="h-5 w-5" />
+              <SettingsIcon className="h-5 w-5" />
             </div>
-            <h2 className="text-lg font-bold text-slate-800">Team Settings</h2>
+            <h2 className="text-lg font-bold text-slate-800">{workspaceName} Settings</h2>
           </div>
           <button 
             onClick={onClose}
@@ -167,30 +136,26 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
           <section>
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
               <UserPlus className="h-4 w-4 text-slate-400" />
-              Invite Teammate
+              Invite to Workspace
             </h3>
             
             <form onSubmit={handleInvite} className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-3">
-                <select
+                <input
+                  type="text"
+                  placeholder="Username"
                   value={inviteUsername}
                   onChange={(e) => setInviteUsername(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   required
-                >
-                  <option value="" disabled>Select workspace member...</option>
-                  {workspaceMembers.filter(wm => !members.some(m => m.username.toLowerCase() === wm.username.toLowerCase())).map(wm => (
-                    <option key={wm.username} value={wm.username}>{wm.username}</option>
-                  ))}
-                </select>
+                />
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
                   className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 >
-                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
                   <option value="collaborator">Collaborator</option>
-                  <option value="commenter">Commenter</option>
                   <option value="viewer">Viewer</option>
                 </select>
                 <button
@@ -198,7 +163,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                   disabled={isInviting || !inviteUsername.trim()}
                   className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send Invite"}
+                  {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Invite"}
                 </button>
               </div>
               
@@ -211,7 +176,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
           <section>
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Shield className="h-4 w-4 text-slate-400" />
-              Existing Members
+              Workspace Members
             </h3>
             
             <div className="border border-slate-200/60 rounded-xl overflow-hidden">
@@ -236,26 +201,13 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                           <p className="text-xs text-slate-500 capitalize">{member.role}</p>
                         </div>
                       </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={member.role}
-                          onChange={(e) => handleRoleChange(member.username, e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs font-semibold capitalize bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        >
-                          <option value="owner">Owner</option>
-                          <option value="collaborator">Collaborator</option>
-                          <option value="commenter">Commenter</option>
-                          <option value="viewer">Viewer</option>
-                        </select>
-                        <button
-                          onClick={() => handleRemoveMember(member.username)}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                          title="Remove user"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleRemove(member.username)}
+                        title="Remove member"
+                        className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -267,5 +219,25 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
       </div>
     </div>,
     document.body
+  );
+}
+
+function SettingsIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }

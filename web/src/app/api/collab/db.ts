@@ -150,7 +150,7 @@ async function readJsonDb() {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
   if (!fs.existsSync(DB_PATH)) {
-    const init = { state: null, users: [] };
+    const init = { state: null, users: [], workspaces: [] };
     fs.writeFileSync(DB_PATH, JSON.stringify(init, null, 2), "utf-8");
     return init;
   }
@@ -158,7 +158,7 @@ async function readJsonDb() {
     const raw = fs.readFileSync(DB_PATH, "utf-8");
     return JSON.parse(raw);
   } catch (e) {
-    return { state: null, users: [] };
+    return { state: null, users: [], workspaces: [] };
   }
 }
 
@@ -167,4 +167,53 @@ async function writeJsonDb(data: any) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
+}
+
+export async function getDocumentRole(documentId: string, username: string): Promise<string | null> {
+  const docs = await getDocuments();
+  const doc = docs.find((d: any) => d.id === documentId);
+  if (!doc || !doc.members) return null;
+  const member = doc.members.find((m: any) => m.username?.toLowerCase() === username.toLowerCase());
+  return member ? member.role : null;
+}
+
+export async function getWorkspaces(): Promise<any[]> {
+  if (pool) {
+    await ensureTable();
+    const res = await pool.query("SELECT value FROM collab_state WHERE key = 'workspaces'");
+    if (res.rows.length > 0) {
+      return res.rows[0].value || [];
+    }
+    return [];
+  } else {
+    const data = await readJsonDb();
+    return data.workspaces ?? [];
+  }
+}
+
+export async function saveWorkspaces(workspaces: any[]): Promise<void> {
+  if (pool) {
+    await ensureTable();
+    await pool.query(
+      `INSERT INTO collab_state (key, value) VALUES ('workspaces', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(workspaces)]
+    );
+  } else {
+    const data = await readJsonDb();
+    data.workspaces = workspaces;
+    await writeJsonDb(data);
+  }
+}
+
+export async function createWorkspace(id: string, name: string, ownerUsername: string): Promise<any> {
+  const workspaces = await getWorkspaces();
+  const newWorkspace = {
+    id,
+    name,
+    members: [{ username: ownerUsername, role: 'admin' }]
+  };
+  workspaces.push(newWorkspace);
+  await saveWorkspaces(workspaces);
+  return newWorkspace;
 }

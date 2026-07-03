@@ -31,7 +31,7 @@ export default function SurgicalEditSandbox({
     setError(null);
 
     try {
-      const res = await fetch("/api/collab/edit", {
+      const res = await fetch("/viscollab/api/collab/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sectionId, prompt, originalHtml }),

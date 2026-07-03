@@ -14,12 +14,13 @@ interface HeaderProps {
   isCommentsOpen: boolean;
   setIsCommentsOpen: (isOpen: boolean) => void;
   handleLogout: () => void;
+  activeWorkspaceId: string | null;
 }
 
 export default function Header({
   setIsSidebarOpen, documents, activeDocumentId, documentVersions,
   activeVersionNum, setActiveVersionNum, currentUser, setIsConvertModalOpen,
-  isCommentsOpen, setIsCommentsOpen, handleLogout
+  isCommentsOpen, setIsCommentsOpen, handleLogout, activeWorkspaceId
 }: HeaderProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
@@ -112,6 +113,8 @@ export default function Header({
         <TeamSettingsModal 
           isOpen={isTeamModalOpen} 
           onClose={() => setIsTeamModalOpen(false)} 
+          activeDocumentId={activeDocumentId}
+          activeWorkspaceId={activeWorkspaceId}
         />
       </header>
   );

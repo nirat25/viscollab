@@ -23,10 +23,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  // Check if current user is an admin of this workspace
+  // Check if current user is an owner/admin of this workspace
   const currentUserMember = workspace.members.find((m: any) => m.username.toLowerCase() === session!.user!.name!.toLowerCase());
-  if (!currentUserMember || currentUserMember.role !== 'owner') {
-    return NextResponse.json({ error: "Only admins can invite users to a workspace" }, { status: 403 });
+  if (!currentUserMember || !['owner', 'admin'].includes(currentUserMember.role)) {
+    return NextResponse.json({ error: "Only workspace owners can invite users to a workspace" }, { status: 403 });
   }
 
   // Check if user is already a member

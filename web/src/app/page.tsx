@@ -18,7 +18,7 @@ import {
   type Reply
 } from "htmlcollab-app/collab";
 import DocumentSurface, { type PendingSelection } from "../components/DocumentSurface";
-import AuthForms from "../components/AuthForms";
+import AuthScreen from "../components/auth/AuthScreen";
 import Header from "../components/Header";
 import CommentSidebar from "../components/CommentSidebar";
 import WorkspaceSelector from "../components/WorkspaceSelector";
@@ -476,6 +476,7 @@ export default function Home() {
   const [documents, setDocuments] = useState<{ id: string; name: string; createdAt: string; members?: { username: string; role: string }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; createdBy?: string; members: { username: string; role: string }[] }[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("doc-1");
   const [isCreateDocModalOpen, setIsCreateDocModalOpen] = useState(false);
   const [isWorkspaceSettingsOpen, setIsWorkspaceSettingsOpen] = useState(false);
@@ -500,6 +501,17 @@ export default function Home() {
   }, [currentUser, activeDocument]);
 
   const activeDocumentUser = currentUser ? { ...currentUser, role: activeDocumentRole } : null;
+
+  // Determine user's role in the active workspace (may differ from global role)
+  const activeWorkspaceMemberRole = React.useMemo(() => {
+    if (!currentUser || !activeWorkspaceId) return null;
+    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+    if (!ws) return null;
+    const member = ws.members.find(m => m.username.toLowerCase() === currentUser.name.toLowerCase());
+    return member?.role ?? null;
+  }, [currentUser, activeWorkspaceId, workspaces]);
+
+  const canCreateDocInWorkspace = activeWorkspaceMemberRole !== null && ["owner", "admin"].includes(activeWorkspaceMemberRole);
 
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [usernameInput, setUsernameInput] = useState("");
@@ -562,6 +574,8 @@ export default function Home() {
   const [isConverting, setIsConverting] = useState(false);
   const [conversionStep, setConversionStep] = useState(0);
   const [convertError, setConvertError] = useState("");
+  const [createHtmlOption, setCreateHtmlOption] = useState<"asis" | "refine">("asis");
+  const [convertHtmlOption, setConvertHtmlOption] = useState<"asis" | "refine">("refine");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -580,7 +594,7 @@ export default function Home() {
 
   const fetchDocuments = async (workspaceId: string) => {
     try {
-      const res = await fetch(`/viscollab/api/collab/documents?workspaceId=${workspaceId}`);
+      const res = await fetch(`/api/collab/documents?workspaceId=${workspaceId}`);
       const data = await res.json();
       if (data.success && data.documents) {
         setDocuments(data.documents);
@@ -590,11 +604,23 @@ export default function Home() {
     }
   };
 
+  const fetchWorkspaces = async () => {
+    try {
+      const res = await fetch("/api/collab/workspaces");
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspaces(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch workspaces", e);
+    }
+  };
+
   const [lockedSections, setLockedSections] = useState<string[]>([]);
 
   const loadDocumentState = async (docId: string) => {
     try {
-      const res = await fetch(`/viscollab/api/collab?documentId=${docId}`);
+      const res = await fetch(`/api/collab?documentId=${docId}`);
       const data = await res.json();
       if (data.versions) setDocumentVersions(data.versions);
       if (data.activeVersionNum) setActiveVersionNum(data.activeVersionNum);
@@ -623,6 +649,9 @@ export default function Home() {
   }, [mounted, authToken, currentUser]);
 
   useEffect(() => {
+    if (authToken) {
+      fetchWorkspaces();
+    }
     if (authToken && activeWorkspaceId) {
       fetchDocuments(activeWorkspaceId);
     }
@@ -652,15 +681,36 @@ export default function Home() {
   const handleCreateDocSubmit = async () => {
     if (!newDocName.trim() || !newDocHtml.trim()) return;
     setNewDocError("");
+    let targetHtml = newDocHtml;
     try {
-      const res = await fetch("/viscollab/api/collab/documents", {
+      if (createHtmlOption === "refine") {
+        setNewDocError("Refining document with AI... please wait.");
+        const convertRes = await fetch("/api/collab/convert", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            gdocHtml: newDocHtml,
+          }),
+        });
+        const convertData = await convertRes.json();
+        if (!convertRes.ok || !convertData.success) {
+          setNewDocError(convertData.error || "Failed to refine HTML with AI.");
+          return;
+        }
+        targetHtml = convertData.html;
+        setNewDocError("");
+      }
+
+      const res = await fetch("/api/collab/documents", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           name: newDocName,
-          html: newDocHtml,
+          html: targetHtml,
           workspaceId: activeWorkspaceId
         })
       });
@@ -668,6 +718,7 @@ export default function Home() {
       if (res.ok && data.success) {
         setNewDocName("");
         setNewDocHtml("");
+        setCreateHtmlOption("asis");
         setIsCreateDocModalOpen(false);
         if (activeWorkspaceId) await fetchDocuments(activeWorkspaceId);
         setActiveDocumentId(data.document.id);
@@ -684,82 +735,108 @@ export default function Home() {
     setConversionStep(0);
     setConvertError("");
     try {
-      let response;
+      let returnedHtml = "";
+      let defaultDocName = "";
+      
+      const isHtmlFile = docxFile && (docxFile.name.toLowerCase().endsWith(".html") || docxFile.name.toLowerCase().endsWith(".htm"));
+
       if (convertOption === "docx") {
         if (!docxFile) {
-          setConvertError("Please select a .docx file.");
+          setConvertError("Please select a file.");
           setIsConverting(false);
           return;
         }
-        const formData = new FormData();
-        formData.append("file", docxFile);
-        response = await fetch("/viscollab/api/collab/convert", {
-          method: "POST",
-          body: formData,
-        });
+        
+        defaultDocName = docxFile.name.replace(/\.(docx|md|html|htm)$/i, "");
+        
+        if (isHtmlFile && convertHtmlOption === "asis") {
+          // Read HTML directly on client
+          returnedHtml = await docxFile.text();
+        } else {
+          // Standard LLM conversion
+          const formData = new FormData();
+          formData.append("file", docxFile);
+          const response = await fetch("/api/collab/convert", {
+            method: "POST",
+            body: formData,
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            setConvertError(result.error || "Failed to convert document.");
+            setIsConverting(false);
+            return;
+          }
+          returnedHtml = result.html;
+        }
       } else {
         if (!pasteHtml.trim()) {
           setConvertError("Please paste the Google Docs HTML content.");
           setIsConverting(false);
           return;
         }
-        response = await fetch("/viscollab/api/collab/convert", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            gdocHtml: pasteHtml,
-          }),
-        });
+        
+        defaultDocName = `Pasted Doc (${new Date().toLocaleDateString()})`;
+        
+        if (convertHtmlOption === "asis") {
+          returnedHtml = pasteHtml;
+        } else {
+          const response = await fetch("/api/collab/convert", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              gdocHtml: pasteHtml,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            setConvertError(result.error || "Failed to convert document.");
+            setIsConverting(false);
+            return;
+          }
+          returnedHtml = result.html;
+        }
       }
 
-      const result = await response.json();
-      if (response.ok && result.success) {
-        const returnedHtml = result.html;
-
-        // Determine a document name/title
-        let docName = "";
-        const tempDiv = document.createElement("div");
-        tempDiv.innerHTML = returnedHtml;
-        const h1 = tempDiv.querySelector("h1");
-        if (h1 && h1.textContent?.trim()) {
-          docName = h1.textContent.trim();
-        } else if (convertOption === "docx" && docxFile) {
-          docName = docxFile.name.replace(/\.docx$/i, "");
-        } else {
-          docName = `Converted Doc (${new Date().toLocaleDateString()})`;
-        }
-
-        // Post to the documents API to create a new document in the catalog
-        const createRes = await fetch("/viscollab/api/collab/documents", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: docName,
-            html: returnedHtml,
-            workspaceId: activeWorkspaceId
-          }),
-        });
-
-        const createData = await createRes.json();
-        if (createRes.ok && createData.success) {
-          // Clear forms and close modal
-          setDocxFile(null);
-          setPasteHtml("");
-          setConvertError("");
-          setIsConvertModalOpen(false);
-
-          // Refetch document list and switch to the new document
-          if (activeWorkspaceId) await fetchDocuments(activeWorkspaceId);
-          setActiveDocumentId(createData.document.id);
-        } else {
-          setConvertError(createData.error || "Failed to save the converted document.");
-        }
+      // Determine a document name/title
+      let docName = "";
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = returnedHtml;
+      const h1 = tempDiv.querySelector("h1");
+      if (h1 && h1.textContent?.trim()) {
+        docName = h1.textContent.trim();
       } else {
-        setConvertError(result.error || "Failed to convert document.");
+        docName = defaultDocName;
+      }
+
+      // Post to the documents API to create a new document in the catalog
+      const createRes = await fetch("/api/collab/documents", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: docName,
+          html: returnedHtml,
+          workspaceId: activeWorkspaceId
+        }),
+      });
+
+      const createData = await createRes.json();
+      if (createRes.ok && createData.success) {
+        // Clear forms and close modal
+        setDocxFile(null);
+        setPasteHtml("");
+        setConvertError("");
+        setConvertHtmlOption("refine");
+        setIsConvertModalOpen(false);
+
+        // Refetch document list and switch to the new document
+        if (activeWorkspaceId) await fetchDocuments(activeWorkspaceId);
+        setActiveDocumentId(createData.document.id);
+      } else {
+        setConvertError(createData.error || "Failed to save the converted document.");
       }
     } catch (e: any) {
       console.error("Conversion error", e);
@@ -777,7 +854,7 @@ export default function Home() {
     newVerdicts: typeof verdicts
   ) => {
     try {
-      await fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`, {
+      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -827,7 +904,7 @@ export default function Home() {
       // Don't pull server state out from under an open composer / sandbox.
       if (pollPausedRef.current) return;
 
-      fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`)
+      fetch(`/api/collab?documentId=${activeDocumentId}`)
         .then((res) => res.json())
         .then((data) => {
           if (!isSubscribed || pollPausedRef.current) return;
@@ -922,6 +999,7 @@ export default function Home() {
     setSelectedRange({ quote: sel.quote, prefix: sel.prefix, suffix: sel.suffix });
     setCommentTargetSection(sel.sectionId);
     setIsAddingComment(true);
+    setIsCommentsOpen(true);
   }, [currentUser, activeDocumentRole]);
 
   // Whole-section comment via the hover toolbar button.
@@ -930,6 +1008,7 @@ export default function Home() {
     setSelectedRange(null);
     setCommentTargetSection(sectionId);
     setIsAddingComment(true);
+    setIsCommentsOpen(true);
   }, []);
 
   // Add Comment Submission
@@ -1074,7 +1153,7 @@ export default function Home() {
     const oldSectionHtml = sectionEl ? sectionEl.outerHTML : "";
 
     try {
-      const res = await fetch("/viscollab/api/collab/edit", {
+      const res = await fetch("/api/collab/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1206,7 +1285,7 @@ export default function Home() {
     setLockedSections(updatedLocks);
 
     try {
-      await fetch(`/viscollab/api/collab?documentId=${activeDocumentId}`, {
+      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lockedSections: updatedLocks })
@@ -1258,7 +1337,7 @@ export default function Home() {
     if (currentVersion.status !== "Draft") return;
     setIsRegenerating(true);
     try {
-      const res = await fetch("/viscollab/api/collab/regenerate", {
+      const res = await fetch("/api/collab/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1335,16 +1414,7 @@ export default function Home() {
   }  // 1. Auth Lock Screen
   if (!authToken || !currentUser) {
     return (
-      <AuthForms
-        authTab={authTab}
-        setAuthTab={setAuthTab}
-        authError={authError}
-        setAuthError={setAuthError}
-        usernameInput={usernameInput}
-        setUsernameInput={setUsernameInput}
-        passwordInput={passwordInput}
-        setPasswordInput={setPasswordInput}
-      />
+      <AuthScreen />
     );
   }
 
@@ -1372,7 +1442,7 @@ export default function Home() {
             <Sparkles className="h-4.5 w-4.5 text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-tight text-white leading-none">HTMLCollab</h1>
+            <h1 className="text-sm font-bold tracking-tight text-white leading-none">Viscollab</h1>
             <span className="text-[10px] text-slate-400 font-medium font-mono">WORKSPACE</span>
           </div>
         </div>
@@ -1409,7 +1479,7 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
             <span>Documents</span>
-            {currentUser && (currentUser.role === "owner" || currentUser.role === "collaborator") && (
+            {canCreateDocInWorkspace && (
               <button
                 onClick={() => setIsConvertModalOpen(true)}
                 className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
@@ -1560,13 +1630,13 @@ export default function Home() {
               tourStep === 1 ? "ring-4 ring-indigo-500 ring-offset-2 z-50" : ""
             }`}
           >
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4.5 w-4.5 text-indigo-600" />
-                <span className="text-sm font-bold text-slate-800 font-display">
+            <div className="bg-slate-50 border-b border-slate-200 px-3 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
+                <span className="text-sm font-bold text-slate-800 font-display truncate">
                   {documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview"}
                 </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   currentVersion.status === "Live" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
                 }`}>
                   {currentVersion.status}
@@ -1721,7 +1791,7 @@ export default function Home() {
 
               {/* Error */}
               {sandboxError && (
-                <div className="bg-red-50 text-red-700 text-xs px-4 py-3 rounded-xl border border-red-100 flex items-start gap-2 animate-fade-in">
+                <div data-testid="sandbox-error-message" className="bg-red-50 text-red-700 text-xs px-4 py-3 rounded-xl border border-red-100 flex items-start gap-2 animate-fade-in">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>{sandboxError}</span>
                 </div>
@@ -1817,7 +1887,7 @@ export default function Home() {
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  Upload File (.docx, .md)
+                  Upload File (.docx, .md, .html, .htm)
                 </button>
                 <button
                   type="button"
@@ -1832,49 +1902,116 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Option A: Docx File Upload */}
+              {/* Option A: Docx/HTML/MD File Upload */}
               {convertOption === "docx" && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
-                    Select Document (.docx, .md)
-                  </label>
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-200 border-dashed rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100/50 transition-colors">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <FileText className="h-8 w-8 text-slate-400 mb-2" />
-                        <p className="text-xs text-slate-600 font-semibold mb-1">
-                          {docxFile ? docxFile.name : "Click to select a .docx or .md file"}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Word or Markdown files</p>
-                      </div>
-                      <input
-                        type="file"
-                        accept=".docx,.md"
-                        className="hidden"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            setDocxFile(e.target.files[0]);
-                          }
-                        }}
-                      />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
+                      Select Document (.docx, .md, .html, .htm)
                     </label>
+                    <div className="flex items-center justify-center w-full">
+                      <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-200 border-dashed rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100/50 transition-colors">
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <FileText className="h-8 w-8 text-slate-400 mb-2" />
+                          <p className="text-xs text-slate-600 font-semibold mb-1">
+                            {docxFile ? docxFile.name : "Click to select a file"}
+                          </p>
+                          <p className="text-[10px] text-slate-400">Word, Markdown, or HTML files</p>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".docx,.md,.html,.htm"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              setDocxFile(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
+
+                  {docxFile && (docxFile.name.toLowerCase().endsWith(".html") || docxFile.name.toLowerCase().endsWith(".htm")) && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2 animate-fade-in">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
+                        HTML Processing Option
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="convert-file-html-option"
+                            value="asis"
+                            checked={convertHtmlOption === "asis"}
+                            onChange={() => setConvertHtmlOption("asis")}
+                            className="text-indigo-600 focus:ring-indigo-500"
+                          />
+                          Use HTML as is
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="convert-file-html-option"
+                            value="refine"
+                            checked={convertHtmlOption === "refine"}
+                            onChange={() => setConvertHtmlOption("refine")}
+                            className="text-indigo-600 focus:ring-indigo-500"
+                          />
+                          Refine with AI
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Option B: Raw HTML Paste */}
               {convertOption === "paste" && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
-                    Google Docs Raw HTML
-                  </label>
-                  <textarea
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none placeholder-slate-400 font-mono"
-                    placeholder="Paste <html>...</html> or <div>...</div> code from Google Docs here..."
-                    rows={8}
-                    value={pasteHtml}
-                    onChange={(e) => setPasteHtml(e.target.value)}
-                  />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
+                      Google Docs Raw HTML
+                    </label>
+                    <textarea
+                      data-testid="convert-paste-textarea"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none placeholder-slate-400 font-mono"
+                      placeholder="Paste <html>...</html> or <div>...</div> code from Google Docs here..."
+                      rows={8}
+                      value={pasteHtml}
+                      onChange={(e) => setPasteHtml(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
+                      HTML Processing Option
+                    </label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="convert-paste-html-option"
+                          value="asis"
+                          checked={convertHtmlOption === "asis"}
+                          onChange={() => setConvertHtmlOption("asis")}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Use HTML as is
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="convert-paste-html-option"
+                          value="refine"
+                          checked={convertHtmlOption === "refine"}
+                          onChange={() => setConvertHtmlOption("refine")}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Refine with AI
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1897,6 +2034,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleConvertSubmit}
+                data-testid="convert-submit-btn"
                 disabled={isConverting || (convertOption === "docx" ? !docxFile : !pasteHtml.trim())}
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-2 px-5 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-indigo-100 cursor-pointer"
               >
@@ -2025,6 +2163,36 @@ export default function Home() {
                   value={newDocHtml}
                   onChange={(e) => setNewDocHtml(e.target.value)}
                 />
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">
+                  HTML Processing Option
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="create-html-option"
+                      value="asis"
+                      checked={createHtmlOption === "asis"}
+                      onChange={() => setCreateHtmlOption("asis")}
+                      className="text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Use HTML as is
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="create-html-option"
+                      value="refine"
+                      checked={createHtmlOption === "refine"}
+                      onChange={() => setCreateHtmlOption("refine")}
+                      className="text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Refine with AI
+                  </label>
+                </div>
               </div>
             </div>
 

@@ -1,6 +1,24 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { getUsers, hashPassword } from "../../collab/db";
+import { getUsers, verifyPassword } from "../../collab/db";
+
+/**
+ * Resolve the NextAuth secret.
+ *
+ * In production the secret MUST come from the environment — there is no
+ * hardcoded fallback, so a missing NEXTAUTH_SECRET makes NextAuth fail loudly
+ * (its own MissingSecret guard), which is the desired forcing function for the
+ * operator. Outside production we allow a clearly-labelled dev-only secret so
+ * local dev / tests work without configuration.
+ */
+function resolveAuthSecret(): string | undefined {
+  const fromEnv = process.env.NEXTAUTH_SECRET;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV !== "production") {
+    return "dev-only-insecure-secret-do-not-use-in-production";
+  }
+  return undefined;
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -24,8 +42,7 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const hash = hashPassword(credentials.password);
-        if (user.passwordHash !== hash) {
+        if (!verifyPassword(credentials.password, user.passwordSalt, user.passwordHash)) {
           return null;
         }
 
@@ -61,7 +78,7 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET || "viscollab-secret-key-12345",
+  secret: resolveAuthSecret(),
   pages: {
     signIn: "/",
   }

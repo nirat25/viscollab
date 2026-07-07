@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "HTMLCollab — Document Review",
+  title: "Viscollab — Document Review",
   description: "Premium Document Review & Visual Collaboration",
 };
 

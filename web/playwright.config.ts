@@ -32,7 +32,7 @@ export default defineConfig({
     command: "npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: true,
-    stdout: "ignore",
+    stdout: "pipe",
     stderr: "pipe",
     timeout: 60000,
     env: {

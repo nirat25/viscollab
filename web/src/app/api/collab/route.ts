@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { getState, saveState } from "./db";
+import { getState, saveState, getDocumentRole } from "./db";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/options";
 import { canEdit, canComment } from "htmlcollab-app/collab";
+import { testSessionFallback } from "./testAuth";
 
 
 
@@ -335,11 +336,8 @@ type MergeableKey = typeof MERGEABLE_KEYS[number];
 
 export async function GET(request: Request) {
   let session = await getServerSession(authOptions);
-  if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-    session = {
-      user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
-      expires: ""
-    };
+  if (!session) {
+    session = testSessionFallback();
   }
   if (!session || !session.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -347,6 +345,18 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const documentId = searchParams.get("documentId") || undefined;
+
+  // IDOR guard: reading a specific document requires membership in it.
+  // (Legacy demo docs doc-1/doc-2 seed all demo users as members, so those
+  // still work.) The default/no-documentId state is a generic demo fallback
+  // with no document to scope against.
+  if (documentId) {
+    const docRole = await getDocumentRole(documentId, session.user.name || "");
+    if (!docRole) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   let state = await getState(documentId);
   if (!state) {
     state = { ...INITIAL_STATE };
@@ -365,21 +375,30 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback();
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = (session.user.role || "viewer") as any;
-
     const { searchParams } = new URL(request.url);
     const documentId = searchParams.get("documentId") || undefined;
     const body = await request.json();
+
+    // Write authorization is scoped to the requester's role IN this document,
+    // NOT their global role. Not a member -> forbidden. For the generic
+    // default state (no documentId) fall back to the global role.
+    let role: any;
+    if (documentId) {
+      const docRole = await getDocumentRole(documentId, session.user.name || "");
+      if (!docRole) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      role = docRole;
+    } else {
+      role = (session.user.role || "viewer") as any;
+    }
 
     // -----------------------------------------------------------------------
     // Determine whether this is a full-blob update or a partial update.

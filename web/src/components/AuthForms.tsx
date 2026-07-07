@@ -35,7 +35,7 @@ export default function AuthForms({
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/viscollab/api/auth/signup", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: usernameInput, password: passwordInput }),
@@ -68,7 +68,7 @@ export default function AuthForms({
               <Lock className="h-7 w-7 text-white" />
             </div>
             <h2 className="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight font-display">
-              HTMLCollab Workspace
+              Viscollab Workspace
             </h2>
             <p className="mt-2 text-sm text-slate-500">
               Sign in or create a new account to access the collaborative review dashboard.

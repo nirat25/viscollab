@@ -31,14 +31,15 @@ export default function SurgicalEditSandbox({
     setError(null);
 
     try {
-      const res = await fetch("/viscollab/api/collab/edit", {
+      const res = await fetch("/api/collab/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sectionId, prompt, originalHtml }),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to generate edit");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to generate edit");
       }
 
       const data = await res.json();
@@ -153,7 +154,7 @@ export default function SurgicalEditSandbox({
                   </div>
 
                   {error && (
-                    <div className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900/50">
+                    <div data-testid="sandbox-error-message" className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900/50">
                       {error}
                     </div>
                   )}

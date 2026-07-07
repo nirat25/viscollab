@@ -26,32 +26,32 @@ export default function Header({
 
   if (!currentUser) return null;
   return (
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-1.5 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
               title="Open Workspace Explorer"
             >
               <List className="h-5 w-5" />
             </button>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight font-display text-slate-900 flex items-center gap-2">
-                <FileText className="h-4.5 w-4.5 text-indigo-600" />
-                {documents.find((d) => d.id === activeDocumentId)?.name || "Loading Document..."}
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight font-display text-slate-900 flex items-center gap-2 truncate">
+                <FileText className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
+                <span className="truncate">{documents.find((d) => d.id === activeDocumentId)?.name || "Loading Document..."}</span>
               </h1>
-              <p className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wider">Active Workspace Document</p>
+              <p className="hidden sm:block text-[10px] text-indigo-600 font-semibold uppercase tracking-wider">Active Workspace Document</p>
             </div>
           </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Version Selector */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200/50">
-            <span className="text-xs font-bold text-slate-500 px-2">Version:</span>
+          <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200/50">
+            <span className="hidden sm:inline text-xs font-bold text-slate-500 px-2">Version:</span>
             <select
               value={activeVersionNum}
               onChange={(e) => setActiveVersionNum(Number(e.target.value))}
-              className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2 sm:px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               {documentVersions.map((v) => (
                 <option key={v.versionNumber} value={v.versionNumber}>
@@ -65,9 +65,11 @@ export default function Header({
           {currentUser && (currentUser.role === "owner" || currentUser.role === "collaborator") && (
             <button
               onClick={() => setIsConvertModalOpen(true)}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-3 rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
+              title="Convert Document"
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 px-2.5 sm:px-3 rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
             >
-              ✨ Convert Document
+              <span aria-hidden="true">✨</span>
+              <span className="hidden sm:inline">Convert Document</span>
             </button>
           )}
 
@@ -75,18 +77,20 @@ export default function Header({
           {currentUser && currentUser.role === "owner" && (
             <button
               onClick={() => setIsTeamModalOpen(true)}
-              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-3 rounded-xl text-xs transition-colors shadow-sm cursor-pointer border border-slate-200/50"
+              data-testid="team-settings-button"
+              title="Team Settings"
+              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 px-2.5 sm:px-3 rounded-xl text-xs transition-colors shadow-sm cursor-pointer border border-slate-200/50"
             >
-              <Users className="h-4 w-4" /> Team Settings
+              <Users className="h-4 w-4" /> <span className="hidden sm:inline">Team Settings</span>
             </button>
           )}
 
           {/* Current User Badge */}
-          <div className="flex items-center gap-2.5 bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200/60 shadow-sm">
-            <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold uppercase">
+          <div className="flex items-center gap-2.5 bg-slate-50 px-2 sm:px-3.5 py-1.5 rounded-xl border border-slate-200/60 shadow-sm">
+            <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold uppercase shrink-0">
               {currentUser.name[0]}
             </div>
-            <div className="text-left leading-none">
+            <div className="hidden sm:block text-left leading-none">
               <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
               <p className="text-[10px] font-medium text-slate-400 capitalize">{currentUser.role}</p>
             </div>
@@ -98,7 +102,7 @@ export default function Header({
             title="Toggle Comments"
           >
             <MessageSquare className="h-4 w-4" />
-            Comments
+            <span className="hidden sm:inline">Comments</span>
           </button>
 
           <button

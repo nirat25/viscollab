@@ -2,15 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
 import { getDocuments, saveDocuments, getDocumentRole } from "../../collab/db";
+import { testSessionFallback } from "../../collab/testAuth";
 
 export async function POST(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Sam", role: "owner", token: "token-owner" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -33,7 +33,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
   const fetchWorkspaceMembers = async () => {
     if (!activeWorkspaceId) return;
     try {
-      const res = await fetch(`/viscollab/api/collab/workspaces`);
+      const res = await fetch(`/api/collab/workspaces`);
       const data = await res.json();
       if (res.ok) {
         const ws = data.find((w: any) => w.id === activeWorkspaceId);
@@ -73,7 +73,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
     setSuccessMsg("");
     
     try {
-      const res = await fetch("/viscollab/api/team/invite", {
+      const res = await fetch("/api/team/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, documentId: activeDocumentId })
@@ -121,7 +121,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
     setMembers(members.filter(m => m.username !== username));
     
     try {
-      const res = await fetch("/viscollab/api/team/members", {
+      const res = await fetch("/api/team/members", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username })
@@ -155,6 +155,7 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
           </div>
           <button 
             onClick={onClose}
+            data-testid="team-modal-close"
             className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
@@ -172,20 +173,25 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
             
             <form onSubmit={handleInvite} className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-3">
-                <select
+                <input
+                  type="text"
+                  placeholder="Username"
                   value={inviteUsername}
                   onChange={(e) => setInviteUsername(e.target.value)}
+                  data-testid="invite-username-input"
                   className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   required
-                >
-                  <option value="" disabled>Select workspace member...</option>
+                  list="workspace-members-list"
+                />
+                <datalist id="workspace-members-list">
                   {workspaceMembers.filter(wm => !members.some(m => m.username.toLowerCase() === wm.username.toLowerCase())).map(wm => (
-                    <option key={wm.username} value={wm.username}>{wm.username}</option>
+                    <option key={wm.username} value={wm.username} />
                   ))}
-                </select>
+                </datalist>
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
+                  data-testid="invite-role-select"
                   className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 >
                   <option value="owner">Owner</option>
@@ -196,14 +202,15 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                 <button
                   type="submit"
                   disabled={isInviting || !inviteUsername.trim()}
+                  data-testid="invite-submit-button"
                   className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send Invite"}
                 </button>
               </div>
               
-              {error && <p className="text-sm text-rose-500 font-medium">{error}</p>}
-              {successMsg && <p className="text-sm text-emerald-600 font-medium">{successMsg}</p>}
+              {error && <p data-testid="invite-error-alert" className="text-sm text-rose-500 font-medium">{error}</p>}
+              {successMsg && <p data-testid="invite-success-alert" className="text-sm text-emerald-600 font-medium">{successMsg}</p>}
             </form>
           </section>
 
@@ -232,8 +239,8 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                           {member.username.charAt(0)}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-800">{member.username}</p>
-                          <p className="text-xs text-slate-500 capitalize">{member.role}</p>
+                          <p data-testid={`member-username-${member.username.toLowerCase()}`} className="text-sm font-bold text-slate-800">{member.username}</p>
+                          <p data-testid={`member-role-${member.username.toLowerCase()}`} className="text-xs text-slate-500 capitalize">{member.role}</p>
                         </div>
                       </div>
                       

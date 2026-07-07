@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
 export interface SectionToolbarProps {
@@ -11,6 +11,9 @@ export interface SectionToolbarProps {
   top: number;
   canComment: boolean;
   onComment: (sectionId: string) => void;
+  canEdit?: boolean;
+  isDraft?: boolean;
+  onAiEdit?: (sectionId: string) => void;
   /** Lets the owner clear hover state when the pointer leaves the toolbar. */
   onMouseLeave?: (e: React.MouseEvent) => void;
 }
@@ -28,6 +31,9 @@ export default function SectionToolbar({
   top,
   canComment,
   onComment,
+  canEdit,
+  isDraft,
+  onAiEdit,
   onMouseLeave,
 }: SectionToolbarProps) {
   return (
@@ -51,6 +57,19 @@ export default function SectionToolbar({
       </div>
 
       <div className="flex gap-1.5">
+        {canEdit && isDraft && onAiEdit && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => onAiEdit(sectionId)}
+            data-testid={`ai-edit-btn-${sectionId}`}
+            className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-xl text-[11px] font-bold transition-colors border border-indigo-100/50 dark:border-indigo-800/50 whitespace-nowrap cursor-pointer shadow-sm"
+            title="Surgical AI Edit"
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <span>AI Edit</span>
+          </motion.button>
+        )}
 
         {canComment && (
           <motion.button

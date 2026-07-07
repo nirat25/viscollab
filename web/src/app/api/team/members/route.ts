@@ -2,15 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
 import { getDocuments, saveDocuments, getDocumentRole } from "../../collab/db";
+import { testSessionFallback } from "../../collab/testAuth";
 
 export async function GET(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Sam", role: "owner", token: "token-owner" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,6 +22,12 @@ export async function GET(request: Request) {
     const doc = docs.find((d: any) => d.id === documentId);
     if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
+    // Only members of this document may see its member list.
+    const requesterRole = await getDocumentRole(documentId, session.user.name || "");
+    if (!requesterRole) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const members = doc.members || [];
 
     return NextResponse.json({ success: true, members });
@@ -35,11 +39,8 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Sam", role: "owner", token: "token-owner" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -82,11 +83,8 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Sam", role: "owner", token: "token-owner" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

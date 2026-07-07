@@ -17,7 +17,16 @@
       "Bash(git remote *)",
       "Bash(GIT_TERMINAL_PROMPT=0 timeout 120 git push -u origin main)",
       "Bash(timeout 60 npm run convert -- fixtures/sample-decision.md)",
-      "Bash(rtk wc *)"
+      "Bash(rtk wc *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -v '^$')",
+      "Bash(echo \"exit code: $? \\(1 = no matches = clean\\)\")",
+      "Bash([ -f \"$MEM\" ])",
+      "Bash(npx playwright *)",
+      "Bash(grep -E \"sk-ant-[a-zA-Z0-9]{20,}|sk-or-v1-[a-zA-Z0-9]{20,}|sk-[a-zA-Z0-9]{30,}\")",
+      "Bash(git add *)"
     ]
   }
 }

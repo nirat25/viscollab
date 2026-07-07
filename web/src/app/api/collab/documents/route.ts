@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDocuments, saveDocuments, saveState } from "../db";
+import { getDocuments, saveDocuments, saveState, getWorkspaces } from "../db";
 import crypto from "crypto";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
@@ -10,13 +10,33 @@ export async function GET(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const username = (session.user.name || "").toLowerCase();
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
-    
+
     let documents = await getDocuments();
     if (workspaceId) {
       documents = documents.filter((doc: any) => doc.workspaceId === workspaceId);
     }
+
+    // Scope to documents the requester can see: either a direct member of the
+    // document, or a member of the workspace the document belongs to.
+    const workspaces = await getWorkspaces();
+    const memberWorkspaceIds = new Set(
+      workspaces
+        .filter((ws: any) =>
+          (ws.members || []).some((m: any) => m.username?.toLowerCase() === username)
+        )
+        .map((ws: any) => ws.id)
+    );
+
+    documents = documents.filter((doc: any) => {
+      const isDocMember = (doc.members || []).some(
+        (m: any) => m.username?.toLowerCase() === username
+      );
+      return isDocMember || memberWorkspaceIds.has(doc.workspaceId);
+    });
+
     return NextResponse.json({ success: true, documents });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to fetch documents" }, { status: 500 });

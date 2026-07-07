@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUsers, saveUsers, hashPassword } from "../../collab/db";
+import { getUsers, saveUsers, hashPasswordWithSalt } from "../../collab/db";
 import crypto from "crypto";
 
 export async function POST(request: Request) {
@@ -17,8 +17,11 @@ export async function POST(request: Request) {
       if (existingUser.passwordHash) {
         return NextResponse.json({ error: "User already exists" }, { status: 400 });
       } else {
-        // Complete signup for invited user
-        existingUser.passwordHash = hashPassword(password);
+        // Complete signup for invited user. Keep the pre-assigned role (the
+        // invite already scoped their access); only set credentials here.
+        const { salt, hash } = hashPasswordWithSalt(password);
+        existingUser.passwordSalt = salt;
+        existingUser.passwordHash = hash;
         existingUser.token = crypto.randomBytes(16).toString("hex");
         await saveUsers(users);
         return NextResponse.json({
@@ -29,10 +32,16 @@ export async function POST(request: Request) {
       }
     }
 
+    // New self-registered users get a neutral base global role. Ownership is
+    // granted per-resource (workspace creator -> workspace owner; document
+    // creator -> document owner), never globally at signup. Any client-supplied
+    // elevated role is intentionally ignored.
+    const { salt, hash } = hashPasswordWithSalt(password);
     const newUser = {
       username,
-      role: "owner",
-      passwordHash: hashPassword(password),
+      role: "collaborator",
+      passwordSalt: salt,
+      passwordHash: hash,
       token: crypto.randomBytes(16).toString("hex"),
     };
     users.push(newUser);

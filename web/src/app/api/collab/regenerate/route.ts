@@ -1,7 +1,30 @@
 import { NextResponse } from "next/server";
-import { getState, saveState } from "../db";
+import { getState, saveState, getDocumentRole } from "../db";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/options";
+import { checkAndIncrementLimit } from "../limits";
+import { hasLlmKey } from "../llm";
+import { testSessionFallback } from "../testAuth";
+import { canEdit } from "htmlcollab-app/collab";
 
 export async function POST(request: Request) {
+  let session = await getServerSession(authOptions);
+  if (!session) {
+    session = testSessionFallback();
+  }
+  if (!session || !session.user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (session.user.name) {
+    const limitCheck = await checkAndIncrementLimit(session.user.name, "conversion");
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `You have reached your daily limit of ${limitCheck.limit} conversions.` },
+        { status: 429 }
+      );
+    }
+  }
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -14,11 +37,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Missing documentId" }, { status: 400 });
   }
 
-  const hasKey =
-    process.env["PLAYWRIGHT_TEST"] !== "true" &&
-    process.env["MOCK_AI"] !== "true" &&
-    ((!!process.env["ANTHROPIC_API_KEY"]?.trim() && !process.env["ANTHROPIC_API_KEY"]?.includes("api03")) ||
-     (!!process.env["OPENAI_API_KEY"]?.trim() && !process.env["OPENAI_API_KEY"]?.includes("your-key-here")));
+  // Per-document write authorization: requester must be an edit-capable member.
+  const docRole = await getDocumentRole(documentId, session.user.name || "");
+  if (!docRole || !canEdit(docRole as any)) {
+    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  const hasKey = hasLlmKey();
 
   try {
     const state = await getState(documentId);

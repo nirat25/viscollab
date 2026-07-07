@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getState, saveState } from "../db";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/options";
+import { getState, saveState, getDocumentRole } from "../db";
+import { checkAndIncrementLimit } from "../limits";
+import { hasLlmKey } from "../llm";
+import { testSessionFallback } from "../testAuth";
+import { canEdit } from "htmlcollab-app/collab";
 import {
   validateEditRequest,
   validateLlmSectionResult,
@@ -20,10 +26,26 @@ import {
  *
  * Response 200: { success: true, html: string, simulated: boolean }
  * Errors:       { success: false, error: string } with appropriate status.
- *
- * Auth: mirrors existing collab routes — no token enforcement, documentId-scoped.
  */
 export async function POST(request: Request) {
+  let session = await getServerSession(authOptions);
+  if (!session) {
+    session = testSessionFallback();
+  }
+  if (!session || !session.user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (session.user.name) {
+    const limitCheck = await checkAndIncrementLimit(session.user.name, "edit");
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: `You have reached your daily limit of ${limitCheck.limit} edits.` },
+        { status: 429 }
+      );
+    }
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -53,13 +75,18 @@ export async function POST(request: Request) {
   };
 
   // -------------------------------------------------------------------------
-  // Determine whether an LLM key is available (same detection as convert route)
+  // Per-document write authorization: the requester must be a member of this
+  // document with an edit-capable role. Not a member / cannot edit -> 403.
   // -------------------------------------------------------------------------
-  const hasKey =
-    process.env["PLAYWRIGHT_TEST"] !== "true" &&
-    process.env["MOCK_AI"] !== "true" &&
-    ((!!process.env["ANTHROPIC_API_KEY"]?.trim() && !process.env["ANTHROPIC_API_KEY"]?.includes("api03")) ||
-     (!!process.env["OPENAI_API_KEY"]?.trim() && !process.env["OPENAI_API_KEY"]?.includes("your-key-here")));
+  const docRole = await getDocumentRole(documentId, session.user.name || "");
+  if (!docRole || !canEdit(docRole as any)) {
+    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  // -------------------------------------------------------------------------
+  // Determine whether an LLM key is available (shared detection helper)
+  // -------------------------------------------------------------------------
+  const hasKey = hasLlmKey();
 
   try {
     if (hasKey) {

@@ -4,16 +4,15 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/options";
 import { canEdit } from "htmlcollab-app/collab";
 import { marked } from "marked";
+import { checkAndIncrementLimit } from "../limits";
+import { testSessionFallback } from "../testAuth";
 
 
 export async function POST(request: Request) {
   try {
     let session = await getServerSession(authOptions);
-    if (!session && process.env.PLAYWRIGHT_TEST === "true") {
-      session = {
-        user: { name: "Nirat", role: "collaborator", token: "token-collaborator" },
-        expires: ""
-      };
+    if (!session) {
+      session = testSessionFallback();
     }
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,10 +21,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    if (session.user.name) {
+      const limitCheck = await checkAndIncrementLimit(session.user.name, "conversion");
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          { error: `You have reached your daily limit of ${limitCheck.limit} conversions.` },
+          { status: 429 }
+        );
+      }
+    }
+
     const contentType = request.headers.get("content-type") || "";
     let htmlResult = "";
     let fileName = "uploaded-doc";
     let warnings: string[] = [];
+
+    // Check if running in mock/test environment
+    const isMock = process.env.PLAYWRIGHT_TEST === "true" || process.env.MOCK_AI === "true";
+    if (isMock) {
+      let rawHtml = "";
+      if (contentType.includes("multipart/form-data")) {
+        const formData = await request.formData();
+        const file = formData.get("file") as File;
+        if (!file) {
+          return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+        }
+        fileName = file.name;
+        rawHtml = Buffer.from(await file.arrayBuffer()).toString("utf-8");
+      } else if (contentType.includes("application/json")) {
+        const body = await request.json();
+        fileName = body.fileName || "gdoc-paste";
+        rawHtml = body.gdocHtml || "";
+      }
+      
+      // Simulate AI refinement by wrapping the content
+      htmlResult = `<div id="mock-ai-refinement">${rawHtml}</div>`;
+      return NextResponse.json({
+        success: true,
+        fileName,
+        html: htmlResult,
+        warnings: ["Simulated AI conversion warnings"]
+      });
+    }
 
 
     if (contentType.includes("multipart/form-data")) {

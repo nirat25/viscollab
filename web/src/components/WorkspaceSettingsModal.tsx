@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Users, UserPlus, Loader2, Shield } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 interface WorkspaceSettingsModalProps {
   isOpen: boolean;
@@ -9,6 +10,9 @@ interface WorkspaceSettingsModalProps {
 }
 
 export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }: WorkspaceSettingsModalProps) {
+  const { data: session } = useSession();
+  const currentUsername = (session?.user as any)?.name ?? "";
+
   const [members, setMembers] = useState<{username: string, role: string}[]>([]);
   const [workspaceName, setWorkspaceName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -18,6 +22,10 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
   const [isInviting, setIsInviting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [mounted, setMounted] = useState(false);
+
+  const isOwner = members.some(
+    (m) => m.username.toLowerCase() === currentUsername.toLowerCase() && ["owner", "admin"].includes(m.role)
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -32,7 +40,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
     setIsLoading(true);
     setError("");
     try {
-      const res = await fetch(`/viscollab/api/collab/workspaces`);
+      const res = await fetch(`/api/collab/workspaces`);
       const data = await res.json();
       if (res.ok) {
         const ws = data.find((w: any) => w.id === workspaceId);
@@ -61,7 +69,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
     setSuccessMsg("");
     
     try {
-      const res = await fetch("/viscollab/api/collab/workspaces/invite", {
+      const res = await fetch("/api/collab/workspaces/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, workspaceId })
@@ -90,7 +98,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
     setSuccessMsg("");
     
     try {
-      const res = await fetch("/viscollab/api/collab/workspaces/remove", {
+      const res = await fetch("/api/collab/workspaces/remove", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, workspaceId })
@@ -132,7 +140,8 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           
-          {/* Invite Section */}
+          {/* Invite Section — only visible to owners/admins */}
+          {isOwner && (
           <section>
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
               <UserPlus className="h-4 w-4 text-slate-400" />
@@ -171,6 +180,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
               {successMsg && <p className="text-sm text-emerald-600 font-medium">{successMsg}</p>}
             </form>
           </section>
+          )}
 
           {/* Members List */}
           <section>
@@ -201,6 +211,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
                           <p className="text-xs text-slate-500 capitalize">{member.role}</p>
                         </div>
                       </div>
+                      {isOwner && (
                       <button
                         onClick={() => handleRemove(member.username)}
                         title="Remove member"
@@ -208,6 +219,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
                       >
                         <X className="h-4 w-4" />
                       </button>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUsers, hashPassword } from "../../collab/db";
+import { getUsers, verifyPassword } from "../../collab/db";
 
 export async function POST(request: Request) {
   try {
@@ -17,8 +17,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
     }
 
-    const hash = hashPassword(password);
-    if (user.passwordHash !== hash) {
+    if (!verifyPassword(password, user.passwordSalt, user.passwordHash)) {
       return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
     }
 

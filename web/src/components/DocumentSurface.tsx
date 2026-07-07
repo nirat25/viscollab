@@ -41,7 +41,7 @@ export interface DocumentSurfaceProps {
   onCommentSelection: (sel: PendingSelection) => void;
   isDraft?: boolean;
   lockedSections?: string[];
-  onOpenAiEdit?: (sectionId: string, prompt: string) => void;
+  onOpenAiEdit?: (sectionId: string) => void;
   onEditSectionClick?: (sectionId: string) => void;
   onToggleLock?: (sectionId: string) => void;
 }
@@ -560,7 +560,10 @@ export default function DocumentSurface({
           sectionId={hoveredSectionId}
           title={hoveredMeta?.title || hoveredSectionId}
           top={toolbarTop}
+          canEdit={canEdit}
           canComment={canComment}
+          isDraft={isDraft}
+          onAiEdit={onOpenAiEdit}
           onComment={onCommentSection}
         />
       )}

@@ -38,7 +38,7 @@ export default function AuthScreen() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/viscollab/api/auth/signup", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,7 +97,7 @@ export default function AuthScreen() {
               <Lock className="h-7 w-7 text-white" />
             </div>
             <h2 className="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight font-display">
-              HTMLCollab Workspace
+              Viscollab Workspace
             </h2>
             <p className="mt-2 text-sm text-slate-500">
               Sign in or create a new account to access the collaborative review dashboard.
@@ -189,49 +189,7 @@ export default function AuthScreen() {
                 </button>
               </div>
 
-              {/* Mock Identities for testing */}
-              <div className="mt-4 pt-4 border-t border-slate-200/60">
-                <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
-                  Or mock login as:
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      setUsernameInput("alex");
-                      setPasswordInput("password");
-                      // Slight delay to allow state to settle, though technically
-                      // we should pass directly to handleSignIn but the event object
-                      // requires standard form structure. We can just simulate it:
-                      setTimeout(() => {
-                        e.preventDefault();
-                        const formEvent = { preventDefault: () => {} } as any;
-                        handleSignIn(formEvent);
-                      }, 50);
-                    }}
-                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <User className="h-3 w-3 text-indigo-500" />
-                    Reader (Alex)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      setUsernameInput("nirat");
-                      setPasswordInput("password");
-                      setTimeout(() => {
-                        e.preventDefault();
-                        const formEvent = { preventDefault: () => {} } as any;
-                        handleSignIn(formEvent);
-                      }, 50);
-                    }}
-                    className="flex-1 py-2 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <User className="h-3 w-3 text-emerald-500" />
-                    Author (Nirat)
-                  </button>
-                </div>
-              </div>
+
             </form>
           ) : (
             <form className="space-y-4" onSubmit={handleSignUp}>
@@ -304,49 +262,7 @@ export default function AuthScreen() {
             </form>
           )}
 
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-slate-200"></div>
-            </div>
-            <div className="relative flex justify-center text-[10px] uppercase">
-              <span className="px-2 bg-white/40 text-slate-400 font-bold">Quick Demo Logins</span>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => handleDemoLogin("Sam")}
-              data-testid="token-btn-owner"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Sam (Owner)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Nirat")}
-              data-testid="token-btn-collaborator"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Nirat (Collab)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Priya")}
-              data-testid="token-btn-commenter"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Priya (Commenter)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={() => handleDemoLogin("Alex")}
-              data-testid="token-btn-viewer"
-              className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white/60 hover:bg-white text-left hover:border-indigo-200 transition-all text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <span>Alex (Viewer)</span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-            </button>
-          </div>
         </div>
       </div>
     );

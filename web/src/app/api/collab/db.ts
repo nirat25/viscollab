@@ -3,8 +3,50 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-export function hashPassword(password: string): string {
-  return crypto.pbkdf2Sync(password, "viscollab-salt", 1000, 64, "sha512").toString("hex");
+// Strong password hashing using Node's built-in scrypt (no external deps).
+// Each user gets a unique random salt stored alongside the hash.
+const SCRYPT_KEYLEN = 64;
+
+/**
+ * Generates a fresh random per-user salt (hex-encoded).
+ */
+export function generateSalt(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+/**
+ * Derives a password hash (hex) from a password and a per-user salt (hex).
+ * scrypt is deliberately slow/memory-hard to resist offline cracking.
+ */
+export function hashPassword(password: string, salt: string): string {
+  return crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString("hex");
+}
+
+/**
+ * Convenience: create a brand-new salt+hash pair for a password.
+ */
+export function hashPasswordWithSalt(password: string): { salt: string; hash: string } {
+  const salt = generateSalt();
+  return { salt, hash: hashPassword(password, salt) };
+}
+
+/**
+ * Constant-time verification of a password against a stored salt + hash.
+ * Returns false if the stored record is missing/malformed.
+ */
+export function verifyPassword(password: string, salt: string, expectedHash: string): boolean {
+  if (!salt || !expectedHash) return false;
+  let expectedBuf: Buffer;
+  try {
+    expectedBuf = Buffer.from(expectedHash, "hex");
+  } catch {
+    return false;
+  }
+  // A malformed stored hash of the wrong length can't match; bail before
+  // timingSafeEqual (which throws on length mismatch).
+  if (expectedBuf.length !== SCRYPT_KEYLEN) return false;
+  const actualBuf = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
+  return crypto.timingSafeEqual(actualBuf, expectedBuf);
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -128,9 +170,9 @@ export async function getUserByUsername(username: string): Promise<any> {
   return users.find((u: any) => u.username?.toLowerCase() === username.toLowerCase()) || null;
 }
 
-export async function createUser(username: string, passwordHash: string, role: string, token: string): Promise<any> {
+export async function createUser(username: string, passwordSalt: string, passwordHash: string, role: string, token: string): Promise<any> {
   const users = await getUsers();
-  const newUser = { username, passwordHash, role, token };
+  const newUser = { username, passwordSalt, passwordHash, role, token };
   users.push(newUser);
   await saveUsers(users);
   return newUser;
@@ -211,7 +253,8 @@ export async function createWorkspace(id: string, name: string, ownerUsername: s
   const newWorkspace = {
     id,
     name,
-    members: [{ username: ownerUsername, role: 'admin' }]
+    createdBy: ownerUsername,
+    members: [{ username: ownerUsername, role: 'owner' }]
   };
   workspaces.push(newWorkspace);
   await saveWorkspaces(workspaces);

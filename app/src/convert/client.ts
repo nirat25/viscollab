@@ -10,6 +10,15 @@
  *   CONVERT_MODEL      per-role overrides
  *   EDIT_MODEL
  *   JUDGE_MODEL
+ *   CONVERT_MODEL_FALLBACKS   OpenRouter only — comma-separated fallback
+ *   EDIT_MODEL_FALLBACKS      model IDs tried in order if the primary model
+ *   JUDGE_MODEL_FALLBACKS     errors, rate-limits, or is unavailable.
+ *
+ * When OPENAI_BASE_URL points at OpenRouter, every request is routed to the
+ * cheapest available provider for the chosen model (OpenRouter's own default
+ * is price-*weighted*, not guaranteed-cheapest — see buildOpenAIRequestBody).
+ * Neither this nor the fallback list applies to real api.openai.com or to
+ * Anthropic — both are OpenRouter-specific extensions to the wire format.
  */
 
 export type Role = "convert" | "edit" | "judge";
@@ -42,10 +51,35 @@ const ROLE_ENV_KEY: Record<Role, string> = {
   judge:   "JUDGE_MODEL",
 };
 
+const ROLE_FALLBACK_ENV_KEY: Record<Role, string> = {
+  convert: "CONVERT_MODEL_FALLBACKS",
+  edit:    "EDIT_MODEL_FALLBACKS",
+  judge:   "JUDGE_MODEL_FALLBACKS",
+};
+
 export function getModel(role: Role): string {
   const override = process.env[ROLE_ENV_KEY[role]];
   if (override) return override;
   return DEFAULTS[getProvider()][role];
+}
+
+/** True when OPENAI_BASE_URL points at OpenRouter (not real OpenAI or another proxy). */
+export function isUsingOpenRouter(): boolean {
+  return !!process.env["OPENAI_BASE_URL"]?.includes("openrouter.ai");
+}
+
+/**
+ * Comma-separated fallback model IDs for the given role, trimmed and with
+ * empty entries dropped. Only meaningful on OpenRouter — see
+ * buildOpenAIRequestBody.
+ */
+export function getModelFallbacks(role: Role): string[] {
+  const raw = process.env[ROLE_FALLBACK_ENV_KEY[role]];
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function providerInfo(): string {
@@ -54,7 +88,8 @@ export function providerInfo(): string {
     provider === "openai"
       ? process.env["OPENAI_BASE_URL"] ?? "api.openai.com"
       : "api.anthropic.com";
-  return `${provider} (${base}) — convert=${getModel("convert")} edit=${getModel("edit")} judge=${getModel("judge")}`;
+  const routing = isUsingOpenRouter() ? " [openrouter: price-sort routing]" : "";
+  return `${provider} (${base}) — convert=${getModel("convert")} edit=${getModel("edit")} judge=${getModel("judge")}${routing}`;
 }
 
 export interface CompleteOpts {
@@ -96,6 +131,59 @@ async function completeAnthropic(opts: CompleteOpts): Promise<string> {
     .join("");
 }
 
+/**
+ * Chat-completion request body for the OpenAI-compatible path. `models` and
+ * `provider` are OpenRouter extensions to the OpenAI spec — the official
+ * `openai` SDK's types don't model them, which is why completeOpenAI() casts
+ * this at the call site instead of typing it as the SDK's own params type.
+ */
+export interface OpenAIChatRequestBody {
+  model?: string;
+  models?: string[];
+  provider?: { sort: "price"; allow_fallbacks: true };
+  max_tokens: number;
+  messages: Array<{ role: "system" | "user"; content: string }>;
+}
+
+/**
+ * Builds the OpenAI-compatible request body. Pure and side-effect-free (no
+ * network call) so the OpenRouter-specific behavior below is deterministically
+ * testable without mocking the SDK.
+ *
+ * On OpenRouter:
+ *   - provider.sort: "price" always picks the cheapest available provider for
+ *     the chosen model. OpenRouter's own unset-sort default is price-
+ *     *weighted* across providers, not guaranteed cheapest — sort forces it.
+ *   - If *_MODEL_FALLBACKS is set, sends `models: [primary, ...fallbacks]`
+ *     instead of a single `model`, so a rate-limited/unavailable primary
+ *     model doesn't fail the request outright under public traffic.
+ * Neither applies off OpenRouter (real api.openai.com rejects/ignores both).
+ */
+export function buildOpenAIRequestBody(opts: CompleteOpts): OpenAIChatRequestBody {
+  const body: OpenAIChatRequestBody = {
+    max_tokens: opts.maxTokens ?? 8192,
+    messages: [
+      { role: "system", content: opts.system },
+      { role: "user",   content: opts.user },
+    ],
+  };
+
+  const primaryModel = getModel(opts.role);
+  if (isUsingOpenRouter()) {
+    const fallbacks = getModelFallbacks(opts.role);
+    if (fallbacks.length > 0) {
+      body.models = [primaryModel, ...fallbacks];
+    } else {
+      body.model = primaryModel;
+    }
+    body.provider = { sort: "price", allow_fallbacks: true };
+  } else {
+    body.model = primaryModel;
+  }
+
+  return body;
+}
+
 async function completeOpenAI(opts: CompleteOpts): Promise<string> {
   const key = process.env["OPENAI_API_KEY"];
   if (!key) {
@@ -108,13 +196,9 @@ async function completeOpenAI(opts: CompleteOpts): Promise<string> {
     apiKey: key,
     baseURL: process.env["OPENAI_BASE_URL"],
   });
-  const res = await client.chat.completions.create({
-    model: getModel(opts.role),
-    max_tokens: opts.maxTokens ?? 8192,
-    messages: [
-      { role: "system", content: opts.system },
-      { role: "user",   content: opts.user },
-    ],
-  });
+  const body = buildOpenAIRequestBody(opts);
+  // `body` is fully typed above; the cast is only to bridge OpenRouter's
+  // `models`/`provider` extensions past the openai SDK's stricter params type.
+  const res = await client.chat.completions.create(body as any);
   return res.choices[0]?.message?.content ?? "";
 }

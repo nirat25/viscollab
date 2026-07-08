@@ -5,7 +5,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getModel, getProvider, providerInfo } from "../../src/convert/client.js";
+import {
+  getModel,
+  getProvider,
+  providerInfo,
+  isUsingOpenRouter,
+  getModelFallbacks,
+  buildOpenAIRequestBody,
+} from "../../src/convert/client.js";
 
 // ── Env isolation helpers ─────────────────────────────────────────────────────
 
@@ -30,6 +37,9 @@ const TRACKED_KEYS = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
+  "CONVERT_MODEL_FALLBACKS",
+  "EDIT_MODEL_FALLBACKS",
+  "JUDGE_MODEL_FALLBACKS",
 ];
 
 let snapshot: EnvSnapshot;
@@ -152,6 +162,125 @@ describe("providerInfo", () => {
     delete process.env["OPENAI_BASE_URL"];
     const info = providerInfo();
     expect(info).toContain("api.openai.com");
+  });
+
+  it("flags OpenRouter price-sort routing when active", () => {
+    process.env["LLM_PROVIDER"] = "openai";
+    process.env["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1";
+    const info = providerInfo();
+    expect(info).toContain("openrouter: price-sort");
+  });
+});
+
+// ── isUsingOpenRouter ─────────────────────────────────────────────────────────
+
+describe("isUsingOpenRouter", () => {
+  it("is false when OPENAI_BASE_URL is unset", () => {
+    delete process.env["OPENAI_BASE_URL"];
+    expect(isUsingOpenRouter()).toBe(false);
+  });
+
+  it("is true for an openrouter.ai base URL", () => {
+    process.env["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1";
+    expect(isUsingOpenRouter()).toBe(true);
+  });
+
+  it("is false for a different custom base URL", () => {
+    process.env["OPENAI_BASE_URL"] = "https://api.deepseek.com/v1";
+    expect(isUsingOpenRouter()).toBe(false);
+  });
+});
+
+// ── getModelFallbacks ─────────────────────────────────────────────────────────
+
+describe("getModelFallbacks", () => {
+  it("returns an empty array when unset", () => {
+    delete process.env["CONVERT_MODEL_FALLBACKS"];
+    expect(getModelFallbacks("convert")).toEqual([]);
+  });
+
+  it("parses a comma-separated list, trimming and dropping empty entries", () => {
+    process.env["CONVERT_MODEL_FALLBACKS"] = "a/b, , c/d ,,e/f";
+    expect(getModelFallbacks("convert")).toEqual(["a/b", "c/d", "e/f"]);
+  });
+
+  it("is scoped per role", () => {
+    process.env["EDIT_MODEL_FALLBACKS"] = "x/y";
+    delete process.env["CONVERT_MODEL_FALLBACKS"];
+    expect(getModelFallbacks("edit")).toEqual(["x/y"]);
+    expect(getModelFallbacks("convert")).toEqual([]);
+  });
+});
+
+// ── buildOpenAIRequestBody ────────────────────────────────────────────────────
+
+describe("buildOpenAIRequestBody — non-OpenRouter (direct OpenAI / other proxy)", () => {
+  beforeEach(() => {
+    process.env["LLM_PROVIDER"] = "openai";
+    delete process.env["OPENAI_BASE_URL"];
+    delete process.env["CONVERT_MODEL_FALLBACKS"];
+  });
+
+  it("uses a single 'model' field with no OpenRouter extensions", () => {
+    const body = buildOpenAIRequestBody({ role: "convert", system: "s", user: "u" });
+    expect(typeof body.model).toBe("string");
+    expect(body.models).toBeUndefined();
+    expect(body.provider).toBeUndefined();
+  });
+
+  it("ignores *_MODEL_FALLBACKS off OpenRouter", () => {
+    process.env["CONVERT_MODEL_FALLBACKS"] = "some/other-model";
+    const body = buildOpenAIRequestBody({ role: "convert", system: "s", user: "u" });
+    expect(body.models).toBeUndefined();
+    expect(typeof body.model).toBe("string");
+  });
+});
+
+describe("buildOpenAIRequestBody — OpenRouter", () => {
+  beforeEach(() => {
+    process.env["LLM_PROVIDER"] = "openai";
+    process.env["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1";
+    delete process.env["CONVERT_MODEL_FALLBACKS"];
+    delete process.env["EDIT_MODEL_FALLBACKS"];
+    delete process.env["JUDGE_MODEL_FALLBACKS"];
+  });
+
+  it("routes to the cheapest provider by default", () => {
+    const body = buildOpenAIRequestBody({ role: "convert", system: "s", user: "u" });
+    expect(body.provider).toEqual({ sort: "price", allow_fallbacks: true });
+  });
+
+  it("uses a single 'model' field when no fallbacks are configured", () => {
+    const body = buildOpenAIRequestBody({ role: "convert", system: "s", user: "u" });
+    expect(typeof body.model).toBe("string");
+    expect(body.models).toBeUndefined();
+  });
+
+  it("switches to a 'models' fallback array when *_MODEL_FALLBACKS is set", () => {
+    process.env["CONVERT_MODEL"] = "openai/gpt-4o-mini";
+    process.env["CONVERT_MODEL_FALLBACKS"] =
+      "google/gemini-2.0-flash-001,meta-llama/llama-3.1-8b-instruct";
+    const body = buildOpenAIRequestBody({ role: "convert", system: "s", user: "u" });
+    expect(body.model).toBeUndefined();
+    expect(body.models).toEqual([
+      "openai/gpt-4o-mini",
+      "google/gemini-2.0-flash-001",
+      "meta-llama/llama-3.1-8b-instruct",
+    ]);
+  });
+
+  it("still applies price-sort routing when a fallback list is set", () => {
+    process.env["EDIT_MODEL"] = "openai/gpt-4o-mini";
+    process.env["EDIT_MODEL_FALLBACKS"] = "google/gemini-2.0-flash-001";
+    const body = buildOpenAIRequestBody({ role: "edit", system: "s", user: "u" });
+    expect(body.provider).toEqual({ sort: "price", allow_fallbacks: true });
+  });
+
+  it("is scoped per role — a fallback list for one role doesn't leak to another", () => {
+    process.env["CONVERT_MODEL_FALLBACKS"] = "google/gemini-2.0-flash-001";
+    const editBody = buildOpenAIRequestBody({ role: "edit", system: "s", user: "u" });
+    expect(editBody.models).toBeUndefined();
+    expect(typeof editBody.model).toBe("string");
   });
 });
 

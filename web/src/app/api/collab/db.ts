@@ -187,7 +187,29 @@ export async function updateUserRole(username: string, role: string): Promise<vo
   }
 }
 
+/**
+ * The local JSON-file store is a local-dev convenience only — it does not
+ * work on Vercel (or any read-only/ephemeral filesystem), and silently
+ * "succeeding" there would mean every write is lost between invocations.
+ * Refuse it outright in production instead of surfacing a cryptic EROFS
+ * crash deep in a filesystem call.
+ */
+function assertJsonFallbackAllowed(): void {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "DATABASE_URL is not set (or wasn't detected) and this is a production " +
+      "environment — refusing to fall back to the local JSON file store, " +
+      "since it does not persist on Vercel's read-only/ephemeral filesystem. " +
+      "Set DATABASE_URL to a real Postgres connection string (see " +
+      "web/.env.example), make sure it's scoped to the Production " +
+      "environment in your hosting provider's dashboard, and redeploy — " +
+      "environment variable changes only take effect on a new deployment."
+    );
+  }
+}
+
 async function readJsonDb() {
+  assertJsonFallbackAllowed();
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
@@ -205,6 +227,7 @@ async function readJsonDb() {
 }
 
 async function writeJsonDb(data: any) {
+  assertJsonFallbackAllowed();
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }

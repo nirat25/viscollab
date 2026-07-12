@@ -68,8 +68,7 @@
         { "quote": "The declining revenue and disproportionate engineering cost of Anchor Classic mean continuing to maintain it in its current form is no longer defensible." }
       ],
       "relationships": {
-        "supports": ["decision_1"],
-        "dependsOn": ["evidence_1", "evidence_2"]
+        "supports": ["decision_1"]
       }
     },
     {
@@ -94,7 +93,10 @@
       "sourceStatus": "explicit",
       "sourceRefs": [
         { "quote": "Anchor Classic revenue has declined for six consecutive quarters, from $2.1M ARR in Q1 2026 to $1.4M ARR in Q4 2026." }
-      ]
+      ],
+      "relationships": {
+        "supports": ["claim_1"]
+      }
     },
     {
       "id": "evidence_2",
@@ -104,7 +106,10 @@
       "sourceStatus": "explicit",
       "sourceRefs": [
         { "quote": "Engineering time-tracking shows the on-premise stack consumes 31% of sprint capacity despite generating 8% of revenue." }
-      ]
+      ],
+      "relationships": {
+        "supports": ["claim_1"]
+      }
     },
     {
       "id": "assumption_1",

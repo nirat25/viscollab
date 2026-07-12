@@ -31,8 +31,16 @@ const fixtureRegistry = new Map<string, SemanticArtifact>();
 
 const basename = (p: string): string => p.split(/[\\/]/).pop() ?? p;
 
-/** Register a golden artifact for a sourceFile (exact and basename keys). */
+/** Register a golden artifact for a sourceFile (exact and basename keys).
+ *  Throws if the golden is not schema-valid: an invalid fixture would silently
+ *  break mockExtract's "always schema-valid" guarantee. */
 export function registerMockFixture(sourceFile: string, artifact: SemanticArtifact): void {
+  const check = validateSemanticArtifact(artifact);
+  if (!check.valid) {
+    throw new Error(
+      `registerMockFixture("${sourceFile}"): golden is not schema-valid: ${check.errors.join("; ")}`
+    );
+  }
   fixtureRegistry.set(sourceFile, artifact);
   fixtureRegistry.set(basename(sourceFile), artifact);
 }
@@ -183,7 +191,8 @@ export function heuristicExtract(ir: TipTapDoc): SemanticArtifact {
  */
 export function mockExtract(ir: TipTapDoc): SemanticArtifact {
   const fixture = fixtureRegistry.get(ir.sourceFile) ?? fixtureRegistry.get(basename(ir.sourceFile));
-  if (fixture) return fixture;
+  // Clone so a mutating consumer cannot poison the registry for later calls.
+  if (fixture) return structuredClone(fixture);
 
   try {
     const artifact = heuristicExtract(ir);

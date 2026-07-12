@@ -35,12 +35,12 @@ beforeEach(() => clearMockFixtures());
 describe("mockExtract — fixture map", () => {
   it("returns the registered golden for a known sourceFile", () => {
     registerMockFixture(founderIr.sourceFile, founderGolden);
-    expect(mockExtract(founderIr)).toBe(founderGolden);
+    expect(mockExtract(founderIr)).toEqual(founderGolden);
   });
 
   it("matches by basename when registered with a path", () => {
     registerMockFixture(`/some/dir/${founderIr.sourceFile}`, founderGolden);
-    expect(mockExtract(founderIr)).toBe(founderGolden);
+    expect(mockExtract(founderIr)).toEqual(founderGolden);
   });
 });
 
@@ -115,7 +115,7 @@ describe("runSemanticPipeline with injected extractor", () => {
   it("uses the injected mock extractor (no network)", async () => {
     registerMockFixture(founderIr.sourceFile, founderGolden);
     const { semanticArtifact } = await runSemanticPipeline(founderIr, { extractor: mockExtract });
-    expect(semanticArtifact).toBe(founderGolden);
+    expect(semanticArtifact).toEqual(founderGolden);
   });
 });
 

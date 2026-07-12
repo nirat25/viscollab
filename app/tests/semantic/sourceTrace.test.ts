@@ -148,3 +148,29 @@ describe("validateSourceTrace — blockPath validation", () => {
     expect(result.valid).toBe(false);
   });
 });
+
+describe("normalizeWhitespace parity with collab/comments.ts cleanText (review SF#7)", () => {
+  // The semantic layer keeps a deliberate LOCAL copy of cleanText's
+  // normalization (importing collab would couple it to the DOM-oriented
+  // module). Phase 7 plans to reuse collab's locate() machinery for source
+  // fallback anchors, which is only sound while the two stay byte-identical.
+  // If this test fails, reconcile the implementations before anything else.
+  it("matches cleanText on adversarial inputs", async () => {
+    const { normalizeWhitespace } = await import("../../src/semantic/sourceTrace.js");
+    const { cleanText } = await import("../../src/collab/comments.js");
+    const inputs = [
+      "",
+      "   ",
+      "plain text",
+      "  leading and trailing   ",
+      "tabs\tand\nnewlines\r\nand nbsp",
+      "zero​width​​spaces",
+      "​  mixed ​ runs \t​ of\n everything ​ ",
+      "unicode café — em–dash × times",
+      "a  b   c    d",
+    ];
+    for (const input of inputs) {
+      expect(normalizeWhitespace(input)).toBe(cleanText(input));
+    }
+  });
+});

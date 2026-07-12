@@ -176,3 +176,39 @@ describe("validateSemanticArtifact — defensive shape handling on unknown input
     expect(() => validateSemanticArtifact({})).not.toThrow();
   });
 });
+
+describe("rule 8: missing node id (review hardening)", () => {
+  it("rejects a node without a string id", () => {
+    const artifact = clone(baseArtifact());
+    delete (artifact.nodes[1] as Partial<(typeof artifact.nodes)[1]>).id;
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("missing node id"))).toBe(true);
+  });
+
+  it("rejects a non-string id", () => {
+    const artifact = clone(baseArtifact());
+    (artifact.nodes[1] as unknown as { id: unknown }).id = 42;
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("missing node id"))).toBe(true);
+  });
+});
+
+describe("rule 9: sourceStatus enum (review hardening)", () => {
+  it("rejects a sourceStatus outside the three-value enum", () => {
+    const artifact = clone(baseArtifact());
+    (artifact.nodes[1] as unknown as { sourceStatus: unknown }).sourceStatus = "maybe";
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("invalid sourceStatus"))).toBe(true);
+  });
+
+  it("rejects a missing sourceStatus", () => {
+    const artifact = clone(baseArtifact());
+    delete (artifact.nodes[1] as Partial<(typeof artifact.nodes)[1]>).sourceStatus;
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("invalid sourceStatus"))).toBe(true);
+  });
+});

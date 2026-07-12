@@ -17,10 +17,15 @@
       "status": "proposed",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "DentalTechHub has the highest opportunity to create value in Job Steps 4-8" }
+        {
+          "quote": "DentalTechHub has the highest opportunity to create value in Job Steps 4-8"
+        }
       ],
       "relationships": {
-        "dependsOn": ["claim_1", "claim_2"]
+        "dependsOn": [
+          "claim_1",
+          "claim_2"
+        ]
       }
     },
     {
@@ -30,10 +35,14 @@
       "summary": "Job Step 4 (Discover) is a very-high-opportunity step because information is fragmented and sources are biased.",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "Fragmented information, biased sources, no central hub" }
+        {
+          "quote": "Fragmented information, biased sources, no central hub"
+        }
       ],
       "relationships": {
-        "supports": ["decision_1"]
+        "supports": [
+          "decision_1"
+        ]
       }
     },
     {
@@ -43,10 +52,14 @@
       "summary": "Job Step 6 (Evaluate) is a very-high-opportunity step because pricing is hidden and information is hard to compare.",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "Hidden pricing, outdated info, hard to compare, fake reviews" }
+        {
+          "quote": "Hidden pricing, outdated info, hard to compare, fake reviews"
+        }
       ],
       "relationships": {
-        "supports": ["decision_1"]
+        "supports": [
+          "decision_1"
+        ]
       }
     },
     {
@@ -56,10 +69,14 @@
       "summary": "A stated desired outcome for Job Step 4 is minimizing the time it takes to find relevant solutions.",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "Minimize the time it takes to find relevant solutions" }
+        {
+          "quote": "Minimize the time it takes to find relevant solutions"
+        }
       ],
       "relationships": {
-        "dependsOn": ["claim_1"]
+        "supports": [
+          "claim_1"
+        ]
       }
     },
     {
@@ -69,10 +86,14 @@
       "summary": "A stated desired outcome for Job Step 6 is minimizing hidden pricing or cost surprises.",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "Minimize hidden pricing or cost surprises" }
+        {
+          "quote": "Minimize hidden pricing or cost surprises"
+        }
       ],
       "relationships": {
-        "dependsOn": ["claim_2"]
+        "supports": [
+          "claim_2"
+        ]
       }
     },
     {
@@ -83,7 +104,9 @@
       "role": "Job executor",
       "sourceStatus": "explicit",
       "sourceRefs": [
-        { "quote": "Practice Owner, Office Manager, DSO Executive, DSO Procurement Specialist" }
+        {
+          "quote": "Practice Owner, Office Manager, DSO Executive, DSO Procurement Specialist"
+        }
       ]
     }
   ]

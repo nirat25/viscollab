@@ -6,8 +6,10 @@
  * accepts the value to check and returns `{ valid: boolean; errors: string[] }`.
  * NO zod — see docs/rebuild-architecture.md §0 ground rule 5.
  *
- * Implements exactly the 7 rules in docs/rebuild-architecture.md §5.3. Each rule
- * produces a distinct, greppable error string so tests can assert on substrings.
+ * Implements the 7 rules in docs/rebuild-architecture.md §5.3, plus two
+ * hardenings from the 2026-07-12 Opus review: rule 8 (missing/non-string node
+ * id) and rule 9 (sourceStatus enum). Each rule produces a distinct, greppable
+ * error string so tests can assert on substrings.
  */
 
 import type { SemanticNodeKind } from "./types.js";
@@ -74,6 +76,12 @@ export function validateSemanticArtifact(artifact: unknown): SchemaResult {
       }
       seenIds.add(id);
       knownIds.add(id);
+    } else {
+      // Rule 8: a node without a (string) id would silently escape rules 1/3
+      // and break Phase 4/7 anchoring — reject it outright.
+      errors.push(
+        `missing node id: node kind ${JSON.stringify(kind)} has no string "id"`
+      );
     }
 
     // Rule 4: kind outside the 10-kind union.
@@ -102,6 +110,18 @@ export function validateSemanticArtifact(artifact: unknown): SchemaResult {
     if (!hasRefs && sourceStatus !== "missing_evidence") {
       errors.push(
         `empty sourceRefs on node "${id ?? "<unknown>"}" without sourceStatus "missing_evidence"`
+      );
+    }
+
+    // Rule 9: sourceStatus must be one of the three-value enum — Phase 5
+    // renders grounding badges off this field.
+    if (
+      sourceStatus !== "explicit" &&
+      sourceStatus !== "inferred" &&
+      sourceStatus !== "missing_evidence"
+    ) {
+      errors.push(
+        `invalid sourceStatus on node "${id ?? "<unknown>"}": ${JSON.stringify(sourceStatus)}`
       );
     }
   }

@@ -162,7 +162,7 @@ export function planVisuals(artifact: SemanticArtifact): VisualPlan {
         cells.push({
           optionId: option.id,
           tradeoffId: dim.id,
-          value: cellValue(option.id, dim),
+          value: cellValue(option, dim),
         });
       }
     }
@@ -234,13 +234,16 @@ export function planVisuals(artifact: SemanticArtifact): VisualPlan {
 
 /**
  * Cell value for option × dimension: the dimension's summary IF the artifact
- * relates them (either direction), else "—". Values are never fabricated —
- * they only surface text the artifact already carries (brief §4 row 4).
+ * relates them (checked in BOTH directions — dimension→option and
+ * option→dimension), else "—". Values are never fabricated — they only
+ * surface text the artifact already carries (brief §4 row 4).
  */
-function cellValue(optionId: SemanticNodeId, dim: TradeoffNode): string {
-  const rels = dim.relationships;
-  const touches =
-    !!rels && RELATIONSHIP_KEYS.some((k) => (rels[k] ?? []).includes(optionId));
+function cellValue(option: SemanticNode, dim: TradeoffNode): string {
+  const relates = (from: SemanticNode, toId: SemanticNodeId): boolean => {
+    const rels = from.relationships;
+    return !!rels && RELATIONSHIP_KEYS.some((k) => (rels[k] ?? []).includes(toId));
+  };
+  const touches = relates(dim, option.id) || relates(option, dim.id);
   return touches ? dim.summary : "—";
 }
 

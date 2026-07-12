@@ -168,3 +168,40 @@ describe("rawToArtifact", () => {
     expect(() => rawToArtifact({} as RawExtraction, founderIr, "m")).toThrow(ExtractionError);
   });
 });
+
+describe("primary decision referenceable in relationships (review SF#2)", () => {
+  it("resolves 'supports: [<primaryDecision title>]' to decision_1", () => {
+    const raw = sampleRaw();
+    raw.nodes.push({
+      kind: "claim",
+      title: "Focus beats breadth",
+      summary: "Splitting engineering focus hurts both lines.",
+      sourceQuotes: ["Anchor Classic"],
+      relationships: { supports: ["Sunset Anchor Classic"] },
+    });
+    const a = rawToArtifact(raw, founderIr, "m");
+    const claim = a.nodes.find((n) => n.kind === "claim")!;
+    expect(claim.relationships?.supports).toEqual(["decision_1"]);
+  });
+
+  it("a raw node title colliding with the primary decision's does not steal the reference", () => {
+    const raw = sampleRaw();
+    raw.nodes.push({
+      kind: "claim",
+      title: "Sunset Anchor Classic", // same title as primaryDecision
+      summary: "Duplicate-titled claim.",
+      sourceQuotes: ["Anchor Classic"],
+    });
+    raw.nodes.push({
+      kind: "claim",
+      title: "Another claim",
+      summary: "Refs the shared title.",
+      sourceQuotes: ["Anchor Classic"],
+      relationships: { supports: ["Sunset Anchor Classic"] },
+    });
+    const a = rawToArtifact(raw, founderIr, "m");
+    const referer = a.nodes.find((n) => n.title === "Another claim")!;
+    // Primary decision was registered first, so it wins the title key.
+    expect(referer.relationships?.supports).toEqual(["decision_1"]);
+  });
+});

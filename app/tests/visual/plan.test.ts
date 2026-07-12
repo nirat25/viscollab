@@ -196,3 +196,26 @@ describe("projectArtifact — TipTap projection (§7.1)", () => {
     expect(doc.content.slice(0, -1).map((n) => n.attrs.blockId)).toEqual(planned);
   });
 });
+
+describe("cellValue checks both relationship directions (review SF#3)", () => {
+  it("fills a cell when the OPTION carries the relationship to the dimension", () => {
+    const artifact: SemanticArtifact = {
+      schemaVersion: 1, id: "sa_cv", sourceFile: "cv.md", title: "T", bluf: "B", thesis: "x",
+      nodes: [
+        { id: "option_1", kind: "option", title: "A", summary: "A", sourceRefs: [],
+          sourceStatus: "missing_evidence", relationships: { dependsOn: ["tradeoff_1"] } },
+        { id: "option_2", kind: "option", title: "B", summary: "B", sourceRefs: [],
+          sourceStatus: "missing_evidence" },
+        { id: "tradeoff_1", kind: "tradeoff", dimension: "cost", title: "Cost",
+          summary: "A is cheaper.", sourceRefs: [], sourceStatus: "missing_evidence" },
+      ],
+      extractedBy: "mock",
+    };
+    const plan = planVisuals(artifact);
+    const matrix = plan.blocks.find((b) => b.kind === "tradeoffMatrix") as TradeoffMatrixBlock;
+    const cell1 = matrix.cells.find((c) => c.optionId === "option_1")!;
+    const cell2 = matrix.cells.find((c) => c.optionId === "option_2")!;
+    expect(cell1.value).toBe("A is cheaper.");
+    expect(cell2.value).toBe("—");
+  });
+});

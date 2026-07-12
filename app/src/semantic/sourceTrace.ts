@@ -13,8 +13,11 @@ import type { TipTapDoc } from "../ir.js";
 import { nodeToPlainText } from "../ir.js";
 import type { SemanticArtifact, SemanticNode, SourceRef } from "./types.js";
 
-/** Mirrors collab/comments.ts `cleanText`: strip zero-width spaces, collapse whitespace, trim. */
-function normalizeWhitespace(s: string): string {
+/** Mirrors collab/comments.ts `cleanText`: strip zero-width spaces, collapse whitespace, trim.
+ *  Kept as a LOCAL copy (deliberate - importing collab would couple the semantic layer to the
+ *  DOM-oriented module). Exported so tests/semantic/sourceTrace.test.ts can enforce parity with
+ *  `cleanText`; if the two ever diverge, Phase 7's "reuse locate() machinery" promise breaks. */
+export function normalizeWhitespace(s: string): string {
   return (s || "").replace(/\u200b/g, "").replace(/\s+/g, " ").trim();
 }
 

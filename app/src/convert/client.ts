@@ -10,9 +10,11 @@
  *   CONVERT_MODEL      per-role overrides
  *   EDIT_MODEL
  *   JUDGE_MODEL
+ *   EXTRACT_MODEL
  *   CONVERT_MODEL_FALLBACKS   OpenRouter only — comma-separated fallback
  *   EDIT_MODEL_FALLBACKS      model IDs tried in order if the primary model
  *   JUDGE_MODEL_FALLBACKS     errors, rate-limits, or is unavailable.
+ *   EXTRACT_MODEL_FALLBACKS
  *
  * When OPENAI_BASE_URL points at OpenRouter, every request is routed to the
  * cheapest available provider for the chosen model (OpenRouter's own default
@@ -21,7 +23,7 @@
  * Anthropic — both are OpenRouter-specific extensions to the wire format.
  */
 
-export type Role = "convert" | "edit" | "judge";
+export type Role = "convert" | "edit" | "judge" | "extract";
 
 type Provider = "anthropic" | "openai";
 
@@ -37,11 +39,13 @@ const DEFAULTS: Record<Provider, Record<Role, string>> = {
     convert: "claude-sonnet-4-6",
     edit:    "claude-haiku-4-5",
     judge:   "claude-sonnet-4-6",
+    extract: "claude-sonnet-4-6", // convert tier — semantic extraction needs the large model
   },
   openai: {
     convert: "gpt-4o-mini",
     edit:    "gpt-4o-mini",
     judge:   "gpt-4o-mini",
+    extract: "gpt-4o-mini",
   },
 };
 
@@ -49,12 +53,14 @@ const ROLE_ENV_KEY: Record<Role, string> = {
   convert: "CONVERT_MODEL",
   edit:    "EDIT_MODEL",
   judge:   "JUDGE_MODEL",
+  extract: "EXTRACT_MODEL",
 };
 
 const ROLE_FALLBACK_ENV_KEY: Record<Role, string> = {
   convert: "CONVERT_MODEL_FALLBACKS",
   edit:    "EDIT_MODEL_FALLBACKS",
   judge:   "JUDGE_MODEL_FALLBACKS",
+  extract: "EXTRACT_MODEL_FALLBACKS",
 };
 
 export function getModel(role: Role): string {
@@ -89,7 +95,7 @@ export function providerInfo(): string {
       ? process.env["OPENAI_BASE_URL"] ?? "api.openai.com"
       : "api.anthropic.com";
   const routing = isUsingOpenRouter() ? " [openrouter: price-sort routing]" : "";
-  return `${provider} (${base}) — convert=${getModel("convert")} edit=${getModel("edit")} judge=${getModel("judge")}${routing}`;
+  return `${provider} (${base}) — convert=${getModel("convert")} edit=${getModel("edit")} judge=${getModel("judge")} extract=${getModel("extract")}${routing}`;
 }
 
 export interface CompleteOpts {

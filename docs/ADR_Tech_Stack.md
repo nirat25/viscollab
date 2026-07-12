@@ -1,7 +1,7 @@
 # Architecture Decision Record (ADR): Tech Stack for HTMLCollab
 
 **Date:** June 8, 2026  
-**Status:** Proposed  
+**Status:** Accepted (2026-07-12) — see Addendum below.  
 **Author:** Principal Engineer (L8)  
 
 ## Context
@@ -124,3 +124,16 @@ This document outlines the architectural decisions for the four core pillars of 
 3. **Storage:** PostgreSQL (JSONB for ASTs, Relational for State/Comments).
 4. **IR Format:** Clean JSON AST (compatible with the frontend editor schema), generated via semantic HTML stripping (Mammoth.js).
 5. **Authentication:** NextAuth.js (Auth.js) backed by PostgreSQL to manage scalable team invites and role-based access.
+
+---
+
+## Addendum — 2026-07-12 (Accepted): Semantic-model rebuild
+
+This addendum does not rewrite the analysis above; it records what was actually decided and implemented as the ADR moved from Proposed to Accepted, per the rebuild governed by `docs/visual-decision-room-plan.md` (product/phase plan) and `docs/rebuild-architecture.md` (BINDING architecture brief, Phases 0–6).
+
+- **Frontend framework — confirmed, now being implemented.** TipTap/ProseMirror + React + Next.js, as recommended in §1, is confirmed and is the framework the rebuild is actively implementing (`web/` — Next.js app; TipTap read-only editor shell under `web/src/components/tiptap/`).
+- **Canonical data model changes.** §4's "Clean JSON AST … generated via semantic HTML stripping" is superseded as the *canonical* model. The canonical data model is now the **`SemanticArtifact`** (semantic JSON — decisions, claims, evidence, assumptions, risks, options, tradeoffs, actions, questions, stakeholders; see `docs/rebuild-architecture.md` §3.1, implemented under `app/src/semantic/`). A deterministic **`VisualPlan`** (`app/src/visual/`) is planned from the `SemanticArtifact`, and TipTap JSON is *projected* from `SemanticArtifact + VisualPlan`. **HTML is a legacy projection/export only, never the source of truth.**
+- **LLM output contract tightened.** The LLM emits **structured semantic JSON only** — never final HTML and never TipTap JSON directly. Extraction and validation are separated: the model returns semantic JSON, which is validated (`app/src/semantic/schema.ts`, hand-rolled — no `zod`) before anything is rendered. Visual planning and TipTap projection are pure deterministic code downstream of that JSON, not further LLM output.
+- **LLM provider/models — names in §2 are superseded by the live configuration.** §2 above names "Claude 3.5 Sonnet / Claude 3 Haiku" as the recommended model tier; that was aspirational Phase-1 text. The actual, current models are configured in `app/src/convert/client.ts` and are **env-overridable**: `claude-sonnet-4-6` for the `convert`/`judge` roles, `claude-haiku-4-5` for the `edit` role (defaults; override via the role's env key, e.g. `EXTRACT_MODEL` for the new `extract` role added by the rebuild). Follow the code, not the model names in §2.
+- **Storage — §3's ORM recommendation is superseded by the live implementation.** §3 recommends "PostgreSQL (via Prisma or Drizzle ORM)." The live implementation uses **raw `pg`**, not an ORM: a single `collab_state(key, value JSONB)` table (`web/src/app/api/collab/db.ts`) holding per-document state blobs (documents, workspaces, users, comments, and — as of this rebuild — `semanticArtifact`/`visualPlan`) as JSONB. This matches §3's fallback note ("direct Postgres JSONB storage is vastly simpler … for an MVP") more than its headline ORM recommendation. **Table-per-entity migration (documents, versions, semantic artifacts, visual plans, comments, verdicts as first-class tables) is deferred to Phase 9 of the rebuild plan** (`docs/visual-decision-room-plan.md`, "Persistence And Compatibility") — not done in this run.
+- **Everything else in this ADR (§1 frontend rationale, §5 authentication) stands as originally written and is not superseded by this addendum.**

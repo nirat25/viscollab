@@ -1,6 +1,6 @@
 # HTMLCollab — Product Requirements & Execution Plan
 ### v1.0 — Foundational Artifact
-*Working codename: "HTMLCollab" (placeholder). Last updated: 2026-05-29. Status: Hypothesis locked for build; validation ongoing.*
+*Working codename: "HTMLCollab" (placeholder). Last updated: 2026-07-12 (pivot addendum — see Decision log addendum + §15A). Status: Hypothesis locked for build; validation ongoing.*
 
 ---
 
@@ -30,15 +30,19 @@ Target **only** documents where the reader already has a genuine stake — must 
 Explicitly **out of scope:** FYI / broadcast documents. Non-reading there is rational and unfixable by format. Most "nobody reads our docs" complaints are about broadcast docs — an unwinnable game.
 
 ## 3. Target persona
-**Primary:** Product and marketing professionals who own documents that require cross-functional sign-off — product managers running spec/PRD handoffs, marketers and PMs circulating business requirements documents for approval. They live and die by getting decisions and alignment across teams that don't report to them.
+*(Updated 2026-07-12, owner decision — primary/secondary reversed by the pivot to visual decision rooms. See Decision log addendum in Part 4. Original 2026-05-29 framing preserved below, relabeled, not deleted.)*
 
-**Secondary (later, not co-equal):** Founders and co-founders, who perform similar jobs but in a structurally different context (small teams, no formal sign-off process, different tooling). Deliberately deprioritized to keep the primary persona sharp.
+**Primary (2026-07-12):** Founders and co-founders / internal strategy owners, who make and drive high-stakes decisions in small teams without a formal sign-off process. They need their strategy thinking — a memo, a plan, a proposal — to be genuinely absorbed and interrogated by the people around them, fast, without a facilitation overhead the team doesn't have.
+
+**Included downstream use case (formerly primary, demoted 2026-07-12):** Product and marketing professionals who own documents that require cross-functional sign-off — product managers running spec/PRD handoffs, marketers and PMs circulating business requirements documents for approval. They live and die by getting decisions and alignment across teams that don't report to them. The same underlying mechanism (structured decision artifact + review) still serves them; they are no longer the persona the product is designed around first.
 
 ## 4. Target artifacts
 Documents that (a) require sign-off or alignment from multiple stakeholders and (b) give those stakeholders a genuine stake:
 - Product specs / PRDs handed to engineering and design
 - Business requirements documents (BRDs) requiring cross-functional approval
 - Proposals and decision documents needing multi-party sign-off
+
+*Updated 2026-07-12:* the flagship artifact type is now the **founder/internal strategy memo** (see Decision log addendum, Part 4, and `docs/visual-decision-room-plan.md`). The three types above remain valid target artifacts as the included downstream use case (§3) — the list is not reduced, the ordering of priority is.
 
 ## 5. Positioning: complementary, not replacement
 The author drafts and refines where they already do. When the draft is ready, they push it to HTMLCollab for the team review-and-alignment phase.
@@ -78,7 +82,8 @@ The author drafts and refines where they already do. When the draft is ready, th
 - **Editing model (post-conversion):** three tiers — (a) block-level edits for structure, (b) direct HTML editing for power users, (c) natural-language instruction for larger changes. First-pass generation uses a larger model; surgical edits use a smaller/faster model.
 - **Collaboration model:** async, version-based. No live simultaneous editing. Publish → comment → revise.
 - **Interactivity boundary:** no arbitrary JavaScript execution. A constrained, safe interaction palette only (accordions, tabs, tooltips, anchored navigation, hover states).
-- **Source of truth:** the HTML artifact is a **read-only review surface**; edits happen in the source draft; the author reconciles comments manually and re-pushes. (See §10.4 — this is the chosen resolution to the central contradiction.)
+- **Source of truth (current rule, updated 2026-07-12 — see Decision log addendum):** after import, the **semantic visual decision room** is the living source of truth. Minor edits (a wrong data point, reordering, emphasis, what-appears-first) happen directly in it. Major rethinks (re-evaluating the proposal itself) happen back in the source drafting tool and are **re-imported as a fresh, renamed document** — never a sync-back. There is never concurrent two-source truth. *(Original 2026-05-29 resolution, superseded by the above: the HTML artifact was a read-only review surface; edits happened only in the source draft; the author reconciled comments manually and re-pushed. See §10.4 for the original reasoning trail, preserved for context.)*
+- **Access model (added 2026-07-12):** no anonymous public viewing in v1. All roles — including viewers — require an account.
 
 ## 10. The hard problems (must be actively managed)
 ### 10.1 Semantic fidelity
@@ -91,13 +96,15 @@ Browser rendering is not the problem (solved by modern frameworks). The hard tie
 First-generation latency is tolerable **if** the payoff is trusted, the wait is *legible* (show the work, like thinking-mode progress), and it is proportionate to perceived task size. This does **not** extend to the edit loop, which is frequent and small. **Rule: spend the long, legible wait on high-value moments (first generation, major restructure); keep the edit loop fast and local.** Note that tolerance for latency is highest among power users; the broad market is more impatient.
 
 ### 10.4 The two-source-of-truth contradiction
-The source draft lives in Google Docs; comments land on the HTML artifact. Closing the edit loop (sync HTML back to Docs) means rebuilding the editor this positioning exists to avoid. **Chosen resolution:** the artifact is a read-only review surface; the author reconciles in the source and re-pushes — the same model design-review tools (Figma, PDF markup) use successfully. The validity test: is the converted artifact enough better than the Google Doc *as a review surface* to justify the split? Must be confirmed in dogfooding.
+The source draft lives in Google Docs; comments land on the HTML artifact. Closing the edit loop (sync HTML back to Docs) means rebuilding the editor this positioning exists to avoid. **Chosen resolution (2026-05-29, original):** the artifact is a read-only review surface; the author reconciles in the source and re-pushes — the same model design-review tools (Figma, PDF markup) use successfully. The validity test: is the converted artifact enough better than the Google Doc *as a review surface* to justify the split? Must be confirmed in dogfooding.
+
+**Superseded 2026-07-12 (see Decision log addendum and §9):** the read-only resolution above no longer holds. The current, final rule (owner-confirmed) is that after import the artifact — now the **semantic visual decision room** — is the living source of truth: minor edits happen directly in it, major rethinks are re-imported as a fresh document. The reasoning trail above is preserved for context, not as the current behavior.
 
 ### 10.5 The surveillance temptation
 The author will want to know who-read-what. Resist past the lightest touch. Crossing this line flips the reader from beneficiary to suspect and breaks tenet #1.
 
 ## 11. Explicitly deferred
-Knowledge graph (the v2 platform thesis); voice input; live simultaneous editing; founders persona; external/public publishing; pricing.
+Knowledge graph (the v2 platform thesis); voice input; live simultaneous editing; ~~founders persona~~ **[SUPERSEDED 2026-07-12 — reversed, not deferred: founder/internal strategy owner is now the PRIMARY persona; see §3 and the Decision log addendum]**; external/public publishing; pricing.
 
 ---
 
@@ -353,6 +360,15 @@ Measure outcomes that reflect the reader's experience and the alignment result �
 
 ---
 
+## 15A. Flagship acceptance test — added 2026-07-12 (owner decision)
+*Governs the rebuild described in `docs/visual-decision-room-plan.md` (product/phase plan) and `docs/rebuild-architecture.md` (BINDING architecture brief for Phases 0–6). See Decision log addendum below.*
+
+**[HYBRID]** Upload a founder strategy memo → the decision room shows BLUF, mind map, tradeoffs, risks, actions, and a review rail; the reviewer can tell within 30 seconds what decision is being asked of them.
+- *Build:* `[AGENT]` — the agent implements the pipeline and visual surface that make this possible: semantic extraction → visual planning → decision-room UI (see `docs/rebuild-architecture.md` §1–§7 for the binding module map).
+- *Judgment:* `[HUMAN]` — a human confirms the 30-second comprehension claim by timing a real reviewer against a real uploaded memo. This is a manual/qualitative test (§12B category 3, not a harness assertion); the agent must not self-certify it or fabricate a result.
+
+---
+
 # PART 4 — DECISION LOG
 *Why key choices were made, including rejected arguments. Inherit the reasoning, not just the conclusion.*
 
@@ -368,7 +384,22 @@ Measure outcomes that reflect the reader's experience and the alignment result �
 | Knowledge graph | **Deferred to v2** | Compelling platform thesis but a second product; would sink v1 if built in parallel. |
 | **Rejected:** "latency is good friction that improves what authors publish" | **Cut** | Latency is dead time *after* the publish decision; not productive friction. Design reflection explicitly if wanted. |
 | **Rejected:** read-receipts / forced acknowledgment | **Cut** | Serves the author by taxing the reader; violates the core design tenet. |
-| Founders persona | **Secondary, deferred** | Different context (no formal sign-off, tiny teams); keeps the primary persona sharp. |
+| Founders persona | **Secondary, deferred** | Different context (no formal sign-off, tiny teams); keeps the primary persona sharp. **[SUPERSEDED 2026-07-12 — see the "Product pivot" row directly below and the addendum that follows this table.]** |
+| **Product pivot (2026-07-12, owner decision)** | **Rebuild around "semantic visual decision rooms"; founder/internal strategy owner becomes the PRIMARY persona** | Conversion (doc→HTML) proved a commodity; the real product bet is a semantic decision model + calm executive visualization, aimed first at the founder making the decision, not the PM routing it for sign-off. PM/marketing sign-off docs (the original primary persona, row above) become an included downstream use case, not the target the product is designed around first. Governing execution docs: `docs/visual-decision-room-plan.md` (product/phase plan) and `docs/rebuild-architecture.md` (BINDING architecture brief, Phases 0–6). Full scope of this pivot — persona, positioning language, source-of-truth restatement, access rule, flagship test — is in the addendum immediately below. |
+
+---
+
+### Decision log addendum — 2026-07-12 (owner decision): Pivot to Visual Decision Rooms
+
+This addendum records a single dated decision (the "Product pivot" row above) in full; it does not alter any earlier row in this log. Earlier rows stay exactly as written — this entry supersedes specific items where noted, it does not delete them.
+
+- **The pivot:** the product is rebuilt around a new core pipeline — founder/internal strategy prose → semantic decision model → executive visual reasoning artifact → account-gated collaborative decision room. This supersedes the original "convert a sign-off draft into an HTML artifact" framing in Parts 1–2 above as the *forward* description of the product; those Parts are retained and, where directly touched by this pivot, have been annotated in place (§3, §4, §9, §10.4, §11) rather than rewritten, so the original hypothesis and reasoning stay legible.
+- **Persona flip:** the founder/internal strategy owner (§3) is now the **primary** persona, reversing the "Founders persona — secondary, deferred" decision-log row above. Product/marketing cross-functional sign-off docs — the original primary persona — become an **included downstream use case**, not the primary target.
+- **Core object renamed:** "HTML artifact" → **semantic visual decision room**. The canonical data model is a `SemanticArtifact` (semantic JSON, see `docs/rebuild-architecture.md` §3.1); HTML/TipTap is a projection, not the source of truth.
+- **Governing execution docs:** `docs/visual-decision-room-plan.md` (product/phase plan, Phases 0–10) and `docs/rebuild-architecture.md` (BINDING architecture brief for the builder agents implementing Phases 0–6). Where this PRD's older §13 task-by-task execution detail (Phases 1–4, written for the HTML-conversion pipeline) conflicts with those two docs for the rebuild, the newer docs govern implementation; this PRD's tenets (§6), anti-scope (§7), and decision-log reasoning remain the governing "why."
+- **Source-of-truth rule (reconfirmed, not new — first resolved in the project's 2026-05-30 "Plan modification #3"):** after import, the artifact is the living source of truth. Minor edits (a wrong data point, reordering, emphasis, what-appears-first) happen directly in the artifact/model. Major rethinks (re-evaluating the proposal itself) happen in the source drafting tool and are re-imported as a fresh, renamed document — never a sync-back. There is never concurrent two-source truth. (See updated §9 and §10.4.)
+- **Access rule (new):** no anonymous public viewing in v1. All roles — including viewers — require an account.
+- **Flagship acceptance test:** added as §15A above, `[HYBRID]`.
 
 ---
 

@@ -29,9 +29,11 @@ function inlineContent(el: HTMLElement, inheritedMarks: Mark[] = []): TextNode[]
   const nodes: TextNode[] = [];
 
   const walk = (node: Node, marks: Mark[]) => {
-    // Text node
+    // Text node — use `.text` (not `.rawText`): node-html-parser decodes HTML
+    // entities (&amp;, &#39;, &quot;, …) via `he` only on the `.text` accessor.
+    // The IR must hold the true text, not markup-encoded text.
     if (node.nodeType === 3) {
-      const text = node.rawText;
+      const text = node.text;
       if (text) nodes.push({ type: "text", text, ...(marks.length ? { marks } : {}) });
       return;
     }
@@ -74,6 +76,18 @@ function makeListItem(el: HTMLElement): ListItemNode {
   };
 
   for (const child of el.childNodes) {
+    // Direct text-node child: emit just that node's (entity-decoded) text.
+    // (Previously this branch re-walked the ENTIRE <li> via inlineContent(el),
+    // duplicating formatted siblings for items like `- **Label**: rest`.)
+    if (child.nodeType === 3) {
+      const text = child.text;
+      // Keep whitespace-only runs only between inline content (they separate
+      // adjacent inline elements); drop leading/pretty-printing whitespace.
+      if (text && (text.trim() !== "" || pendingInline.length > 0)) {
+        pendingInline.push({ type: "text", text });
+      }
+      continue;
+    }
     const e = child as HTMLElement;
     const tag = e.tagName?.toLowerCase() ?? "";
     if (tag === "ul") {
@@ -83,7 +97,7 @@ function makeListItem(el: HTMLElement): ListItemNode {
       flushInline();
       content.push(makeList(e, true) as OrderedListNode);
     } else {
-      pendingInline.push(...inlineContent(e.nodeType === 3 ? el : e));
+      pendingInline.push(...inlineContent(e));
     }
   }
   flushInline();

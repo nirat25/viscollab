@@ -37,7 +37,7 @@
         },
         {
           "type": "text",
-          "text": "&quot;Selecting the right technology solution to address a specific practice need&quot;",
+          "text": "\"Selecting the right technology solution to address a specific practice need\"",
           "marks": [
             {
               "type": "bold"
@@ -2544,7 +2544,7 @@
                   "content": [
                     {
                       "type": "text",
-                      "text": "Minimize the risk of trials that don&#39;t reflect real-world use"
+                      "text": "Minimize the risk of trials that don't reflect real-world use"
                     }
                   ]
                 }
@@ -3472,7 +3472,7 @@
                   "content": [
                     {
                       "type": "text",
-                      "text": "Minimize approvers&#39; concerns about the recommendation"
+                      "text": "Minimize approvers' concerns about the recommendation"
                     }
                   ]
                 }
@@ -4732,7 +4732,7 @@
                   "content": [
                     {
                       "type": "text",
-                      "text": "Feel confident that I&#39;m making an informed decision"
+                      "text": "Feel confident that I'm making an informed decision"
                     }
                   ]
                 }
@@ -4884,7 +4884,7 @@
                   "content": [
                     {
                       "type": "text",
-                      "text": "Feel secure that I won&#39;t be blamed if the solution fails"
+                      "text": "Feel secure that I won't be blamed if the solution fails"
                     }
                   ]
                 }

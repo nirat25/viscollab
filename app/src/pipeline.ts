@@ -16,6 +16,7 @@ import { convertIR, type ConversionResult } from "./convert/index.js";
 import { ProgressReporter } from "./convert/progress.js";
 import type { TipTapDoc } from "./ir.js";
 import type { SemanticArtifact, AgentBrief } from "./semantic/types.js";
+import type { VisualPlan } from "./visual/types.js";
 
 export type InputKind = "docx-path" | "docx-buffer" | "gdoc-html" | "raw-html";
 
@@ -41,10 +42,7 @@ export interface PipelineResult extends ConversionResult {
    *  Populated separately via `runSemanticPipeline(ir)` (Phase 2, `semantic/extract.ts`),
    *  not inline in `runPipeline`, so conversion and extraction fail independently. */
   semanticArtifact?: SemanticArtifact;
-  /** TODO(Phase 3): retype as `import("./visual/types.js").VisualPlan` once
-   *  `app/src/visual/types.ts` lands (owned by another builder). Left as `unknown` for now
-   *  per ARCH DECISION in docs/rebuild-architecture.md §3.3. */
-  visualPlan?: unknown;
+  visualPlan?: VisualPlan;
   /** Phase 8; stays undefined in Phases 0–6. */
   agentBrief?: AgentBrief;
 }

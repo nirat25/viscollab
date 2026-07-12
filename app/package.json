@@ -11,7 +11,8 @@
     "./render": "./dist/render/renderer.js",
     "./convert": "./dist/convert/index.js",
     "./pipeline": "./dist/pipeline.js",
-    "./semantic": "./dist/semantic/index.js"
+    "./semantic": "./dist/semantic/index.js",
+    "./visual": "./dist/visual/index.js"
   },
   "description": "HTMLCollab MVP — ingestion layer (P2-T1). Accepts .docx upload and GDoc HTML paste; produces TipTap-compatible JSON AST IR.",
   "scripts": {

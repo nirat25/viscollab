@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "id": "artifact_founder-strategy-memo",
+  "sourceFile": "founder-strategy-memo.md",
+  "title": "Should We Sunset Anchor Classic?",
+  "bluf": "Sunset Anchor Classic with a 12-month customer migration runway ending March 2028.",
+  "thesis": "Anchor Classic's revenue is shrinking while it consumes an outsized share of engineering time; sunsetting it with a funded migration runway lets the company focus on Anchor Cloud without abandoning existing customers.",
+  "primaryDecisionId": "decision_1",
+  "extractedBy": "mock",
+  "nodes": [
+    {
+      "id": "decision_1",
+      "kind": "decision",
+      "label": "Decision",
+      "title": "Sunset Anchor Classic",
+      "summary": "Whether to sunset the legacy on-premise product Anchor Classic, and on what timeline.",
+      "question": "Should Anchor Classic be sunset, and if so, on what timeline?",
+      "recommendedOptionId": "option_2",
+      "status": "proposed",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "should Anchor Classic be sunset, and if so, on what timeline?" }
+      ],
+      "relationships": {
+        "dependsOn": ["option_1", "option_2", "option_3"]
+      }
+    },
+    {
+      "id": "option_1",
+      "kind": "option",
+      "label": "Option A",
+      "title": "Immediate sunset, no migration support",
+      "summary": "Stop selling Anchor Classic today and end support within 90 days.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Stop selling Anchor Classic today and end support within 90 days." }
+      ]
+    },
+    {
+      "id": "option_2",
+      "kind": "option",
+      "label": "Option B",
+      "title": "Sunset with a 12-month migration runway",
+      "summary": "Stop selling Anchor Classic today, support existing customers through March 2028, and fund a dedicated migration team. This is the recommended option.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Stop selling Anchor Classic today, commit to supporting existing customers through March 2028, and fund a dedicated migration team to move customers onto Anchor Cloud." }
+      ]
+    },
+    {
+      "id": "option_3",
+      "kind": "option",
+      "label": "Option C",
+      "title": "Keep maintaining Anchor Classic indefinitely",
+      "summary": "Continue selling and supporting both Anchor Classic and Anchor Cloud.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Continue selling and supporting both products." }
+      ]
+    },
+    {
+      "id": "claim_1",
+      "kind": "claim",
+      "title": "Anchor Classic is no longer defensible to maintain",
+      "summary": "Declining revenue plus disproportionate engineering cost mean Anchor Classic's current form is no longer defensible.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "The declining revenue and disproportionate engineering cost of Anchor Classic mean continuing to maintain it in its current form is no longer defensible." }
+      ],
+      "relationships": {
+        "supports": ["decision_1"],
+        "dependsOn": ["evidence_1", "evidence_2"]
+      }
+    },
+    {
+      "id": "claim_2",
+      "kind": "claim",
+      "title": "Private-VPC removes the original reason for on-premise",
+      "summary": "The compliance requirements that originally justified on-premise deployment are now met by Anchor Cloud's private-VPC option.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "The compliance requirements that justified on-premise deployment in 2019 are now met by the new private-VPC deployment option in Anchor Cloud, which removes the original reason many customers chose Anchor Classic." }
+      ],
+      "relationships": {
+        "supports": ["decision_1"],
+        "dependsOn": ["assumption_1"]
+      }
+    },
+    {
+      "id": "evidence_1",
+      "kind": "evidence",
+      "title": "Six quarters of revenue decline",
+      "summary": "Anchor Classic ARR fell from $2.1M to $1.4M over six consecutive quarters.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Anchor Classic revenue has declined for six consecutive quarters, from $2.1M ARR in Q1 2026 to $1.4M ARR in Q4 2026." }
+      ]
+    },
+    {
+      "id": "evidence_2",
+      "kind": "evidence",
+      "title": "Disproportionate engineering cost",
+      "summary": "The on-premise stack consumes 31% of sprint capacity while generating only 8% of revenue.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Engineering time-tracking shows the on-premise stack consumes 31% of sprint capacity despite generating 8% of revenue." }
+      ]
+    },
+    {
+      "id": "assumption_1",
+      "kind": "assumption",
+      "title": "Private-VPC reaches general availability in time",
+      "summary": "Assumes the Anchor Cloud private-VPC option, currently in beta, reaches general availability before the migration runway begins in earnest.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "We are assuming the private-VPC deployment option in Anchor Cloud, currently in beta, will be generally available before the migration runway begins in earnest." }
+      ]
+    },
+    {
+      "id": "assumption_2",
+      "kind": "assumption",
+      "title": "Compliance customers accept private-VPC",
+      "summary": "Assumes the twenty-three compliance-driven customers will accept private-VPC as a substitute for fully on-premise deployment; not yet validated with all of them.",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "We are assuming the twenty-three compliance-driven customers will accept private-VPC as a substitute for fully on-premise deployment; we have not validated this with all of them yet." }
+      ],
+      "relationships": {
+        "dependsOn": ["risk_1"]
+      }
+    },
+    {
+      "id": "risk_1",
+      "kind": "risk",
+      "label": "R1",
+      "title": "Customer churn risk",
+      "summary": "Largest healthcare accounts may leave rather than migrate if private-VPC does not meet their compliance needs.",
+      "likelihood": "medium",
+      "impact": "high",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "some of our largest healthcare accounts may leave rather than migrate, especially if the private-VPC option does not meet their compliance needs." }
+      ]
+    },
+    {
+      "id": "risk_2",
+      "kind": "risk",
+      "label": "R2",
+      "title": "Competitor opportunity risk",
+      "summary": "A sunset announcement gives competitors an opening to court the Anchor Classic customer base during the migration window.",
+      "likelihood": "medium",
+      "impact": "medium",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "a sunset announcement gives competitors an opening to court our Anchor Classic customer base during the migration window." }
+      ]
+    },
+    {
+      "id": "tradeoff_1",
+      "kind": "tradeoff",
+      "title": "Engineering time reclaimed",
+      "summary": "Option A reclaims engineering time fastest but preserves the least customer trust.",
+      "dimension": "engineering time reclaimed",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Option A reclaims engineering time fastest but preserves the least customer trust." }
+      ],
+      "relationships": {
+        "dependsOn": ["option_1"]
+      }
+    },
+    {
+      "id": "tradeoff_2",
+      "kind": "tradeoff",
+      "title": "Customer trust preserved",
+      "summary": "Option C preserves the most customer trust but reclaims no engineering time.",
+      "dimension": "customer trust preserved",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Option C preserves the most trust but reclaims no engineering time." }
+      ],
+      "relationships": {
+        "dependsOn": ["option_3"]
+      }
+    },
+    {
+      "id": "action_1",
+      "kind": "action",
+      "title": "Finalize private-VPC GA date",
+      "summary": "Sarah Kim will finalize the private-VPC general-availability date.",
+      "owner": "Sarah Kim",
+      "due": "2027-03-20",
+      "order": 1,
+      "done": false,
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Sarah Kim (VP Engineering) will finalize the private-VPC general-availability date by March 20, 2027." }
+      ],
+      "relationships": {
+        "ownedBy": ["stakeholder_1"]
+      }
+    },
+    {
+      "id": "action_2",
+      "kind": "action",
+      "title": "Call all Anchor Classic customers",
+      "summary": "Marcus Webb will personally call all thirty-one Anchor Classic customers before the sunset announcement.",
+      "owner": "Marcus Webb",
+      "due": "2027-03-10",
+      "order": 2,
+      "done": false,
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Marcus Webb (Head of Customer Success) will personally call all thirty-one Anchor Classic customers before the sunset announcement, starting March 10, 2027." }
+      ],
+      "relationships": {
+        "ownedBy": ["stakeholder_2"]
+      }
+    },
+    {
+      "id": "action_3",
+      "kind": "action",
+      "title": "Draft migration guide",
+      "summary": "Priya Nair will draft the customer-facing migration guide.",
+      "owner": "Priya Nair",
+      "due": "2027-04-01",
+      "order": 3,
+      "done": false,
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Priya Nair (Head of Product) will draft the customer-facing migration guide by April 1, 2027." }
+      ],
+      "relationships": {
+        "ownedBy": ["stakeholder_3"]
+      }
+    },
+    {
+      "id": "question_1",
+      "kind": "question",
+      "title": "Discount for early migrators?",
+      "summary": "Should we offer a discount on Anchor Cloud pricing to Anchor Classic customers who migrate before the runway ends?",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Should we offer a discount on Anchor Cloud pricing to Anchor Classic customers who migrate before the runway ends?" }
+      ]
+    },
+    {
+      "id": "question_2",
+      "kind": "question",
+      "title": "Contingency for compliance rejections",
+      "summary": "What is the contingency plan if more than five of the twenty-three compliance-driven customers reject the private-VPC option?",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "What is our contingency plan if more than five of the twenty-three compliance-driven customers reject the private-VPC option?" }
+      ]
+    },
+    {
+      "id": "stakeholder_1",
+      "kind": "stakeholder",
+      "title": "Sarah Kim",
+      "summary": "VP Engineering; owns the private-VPC general-availability timeline.",
+      "role": "VP Engineering",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Sarah Kim (VP Engineering)" }
+      ]
+    },
+    {
+      "id": "stakeholder_2",
+      "kind": "stakeholder",
+      "title": "Marcus Webb",
+      "summary": "Head of Customer Success; owns customer outreach for the sunset.",
+      "role": "Head of Customer Success",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Marcus Webb (Head of Customer Success)" }
+      ]
+    },
+    {
+      "id": "stakeholder_3",
+      "kind": "stakeholder",
+      "title": "Priya Nair",
+      "summary": "Head of Product; owns the customer-facing migration guide.",
+      "role": "Head of Product",
+      "sourceStatus": "explicit",
+      "sourceRefs": [
+        { "quote": "Priya Nair (Head of Product)" }
+      ]
+    }
+  ]
+}

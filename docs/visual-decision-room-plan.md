@@ -1,6 +1,6 @@
 # Viscollab Rebuild Plan: Visual Decision Rooms
 
-Last updated: 2026-07-09
+Last updated: 2026-07-13 (backlog section added; plan body unchanged since 2026-07-09)
 
 ## Summary
 
@@ -332,3 +332,46 @@ Manual:
 - Account creation is required for all roles, including viewers.
 - `@xyflow/react` is the graph library unless implementation proves it unsuitable.
 - Founder strategy memo is the flagship demo artifact.
+
+## Backlog (deferred items — added 2026-07-13, owner-directed)
+
+Accumulated from the Phase 1–5 review rounds and the owner's visual checkpoints. None block
+Phase 6; pick up opportunistically or as a dedicated polish pass. IDs are stable for reference.
+
+Graph polish (from the owner's Phase-5 visual review):
+1. `BACK-001` — Direction-aware mind-map layout: `supports`/inward arrows currently sweep back
+   across the canvas center on dense maps (layout grows outward from the root while support
+   arrows point inward). Seat supporters on the side their arrow points to, or use routed
+   orthogonal edges. Today color-coding keeps them traceable; revisit if real memos produce
+   dense hubs.
+2. `BACK-002` — `FlowCardNode` handle slots are modulo-3: a card with >3 parallel edges on one
+   side reuses a slot. Make slot count adaptive to edge count.
+3. `BACK-003` — TradeoffMatrix cell semantics are crude-but-grounded (a dimension's summary
+   repeats in every related option's cell). Consider per-cell values in the semantic model
+   (extraction change) or smarter cell text derivation.
+
+Code-quality nits (from Opus reviews of Phases 1–3 and 5):
+4. `BACK-004` — Semantic validator: error on non-string relationship refs instead of silently
+   skipping (`app/src/semantic/schema.ts`).
+5. `BACK-005` — Surface dropped relationship refs programmatically (`SemanticPipelineResult.warnings`)
+   instead of `console.warn` only (`app/src/semantic/extract.ts`).
+6. `BACK-006` — Timeline `due` sort is lexicographic across mixed ISO dates and phrases
+   ("This quarter"); normalize or document per-block (`app/src/visual/plan.ts`).
+7. `BACK-007` — `blockPath` validation accepts text-leaf terminals; tighten to block-level paths
+   (`app/src/semantic/sourceTrace.ts`).
+8. `BACK-008` — `data-visual-block-id` is rendered by BOTH the NodeView wrapper and each leaf
+   component root; pick ONE owner (suggest leaf) **before Phase 7 hover-linking is built on it**.
+9. `BACK-009` — RiskMap ARIA: aria-label only today; add proper table/row/cell roles if screen-reader
+   support becomes a requirement.
+10. `BACK-010` — Type `FlowCardNode` as `NodeProps<Node<FlowCardData>>` to drop the internal cast;
+    define or remove the unused `dr-timeline-body` class; unify `.dr-*` top-level vs
+    nested-under-root CSS convention (`web/src/components/visual/shared.tsx`, `decision-room.css`).
+
+Pipeline/eval:
+11. `BACK-011` — Eval regression harness: run the semantic rubric judge over a golden set from the
+    CLI; seed it with the observed LLM variance mode (quotes stitched with "…"/paraphrase — caught
+    deterministically by `validateSourceTrace`; extraction prompt v2 forbids it).
+12. `BACK-012` — Decide golden-fixture access for web mock mode: package `exports` don't expose
+    `app/tests/fixtures/*`, so the web convert route can't `registerMockFixture` the goldens —
+    either add a fixtures export or accept heuristic-only web mock mode (decide at Phase 6 wiring,
+    don't discover it).

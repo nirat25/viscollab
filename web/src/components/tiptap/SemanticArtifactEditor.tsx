@@ -19,7 +19,8 @@ import type { SemanticArtifact } from "htmlcollab-app/semantic";
 import { projectArtifact, type VisualPlan } from "htmlcollab-app/visual";
 import { SemanticArtifactProvider } from "./SemanticArtifactContext";
 import { visualBlockNodes } from "./nodes";
-import "@xyflow/react/dist/style.css";
+// (xyflow's base stylesheet is imported by MindMapView/ArgumentMapView
+// themselves, so every host of those components gets it — review SF#1.)
 
 const canvasStyle: CSSProperties = {
   background: "#f8fafc",

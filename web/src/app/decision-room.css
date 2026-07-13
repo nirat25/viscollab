@@ -1,0 +1,579 @@
+/**
+ * decision-room.css (Phase 5, VISUI) — scoped LIGHT token layer for the
+ * decision room + its visual components.
+ *
+ * Architecture brief §11 C1: the app's `globals.css` sets a dark body plus
+ * indigo/gradient/glow "glass" styling everywhere (`.vcd-*`, `.doc-item-*`,
+ * `.glass-panel`). We do NOT flip the global body or touch globals.css — the
+ * legacy chrome + DocumentSurface depend on it (brief §7, ground rule 7).
+ *
+ * Instead: everything under `.decision-room-root` gets its own calm light
+ * token set. Components under web/src/components/visual/* read `var(--dr-*,
+ * fallback)` so they still render sensibly if ever mounted outside this root
+ * (e.g. a future standalone embed) — the fallback values ARE these tokens.
+ *
+ * NO backdrop-filter, NO gradients, NO glow shadows, NO dark surfaces here —
+ * flat hairline borders + solid fills only (brief C1 / DoD).
+ */
+
+.decision-room-root {
+  --dr-surface: #ffffff;
+  --dr-canvas: #f8fafc;
+  --dr-ink: #0f172a;
+  --dr-ink-soft: #334155;
+  --dr-ink-muted: #64748b;
+  --dr-hairline: #e2e8f0;
+  --dr-hairline-soft: #f1f5f9;
+
+  /* One restrained accent (flat, no gradient) + calm semantic tints. */
+  --dr-accent: #4338ca;
+  --dr-accent-soft: #eef2ff;
+  --dr-pos: #15803d;
+  --dr-pos-soft: #f0fdf4;
+  --dr-neg: #b91c1c;
+  --dr-neg-soft: #fef2f2;
+  --dr-risk: #b45309;
+  --dr-risk-soft: #fffbeb;
+
+  background: var(--dr-canvas);
+  color: var(--dr-ink);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.decision-room-root h1,
+.decision-room-root h2,
+.decision-room-root h3,
+.decision-room-root h4,
+.decision-room-root p,
+.decision-room-root ul,
+.decision-room-root ol {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- *
+ * Shared primitives used across web/src/components/visual/*        *
+ * ---------------------------------------------------------------- */
+
+.dr-card {
+  background: var(--dr-surface, #ffffff);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.dr-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+  margin: 0 0 10px;
+}
+
+.dr-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dr-ink-muted, #64748b);
+  margin: 0 0 6px;
+}
+
+.dr-empty {
+  font-size: 13px;
+  color: var(--dr-ink-muted, #94a3b8);
+  font-style: italic;
+  margin: 0;
+}
+
+.dr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.dr-chip-row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dr-ink, #0f172a);
+  background: var(--dr-canvas, #f8fafc);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 999px;
+  padding: 5px 12px;
+  line-height: 1.4;
+}
+
+.dr-chip-title {
+  font-weight: 500;
+}
+
+.dr-chip-meta {
+  color: var(--dr-ink-muted, #64748b);
+}
+
+.dr-chip-recommended {
+  border-color: var(--dr-accent, #4338ca);
+  background: var(--dr-accent-soft, #eef2ff);
+}
+
+.dr-chip-risk {
+  border-color: var(--dr-risk, #b45309);
+  color: var(--dr-risk, #b45309);
+}
+
+.dr-tag-recommended {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dr-accent, #4338ca);
+  background: var(--dr-accent-soft, #eef2ff);
+  border: 1px solid var(--dr-accent, #4338ca);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.dr-source-chip {
+  font-size: 11px;
+  color: var(--dr-ink-muted, #64748b);
+  font-style: italic;
+  background: var(--dr-canvas, #f8fafc);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- *
+ * DecisionBrief                                                    *
+ * ---------------------------------------------------------------- */
+
+.dr-brief {
+  display: flex;
+  flex-direction: column;
+}
+
+.dr-brief-bluf {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--dr-ink, #0f172a);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.dr-brief-decision {
+  background: var(--dr-accent-soft, #eef2ff);
+  border: 1px solid var(--dr-accent, #4338ca);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.dr-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dr-accent, #4338ca);
+  margin: 0;
+}
+
+.dr-brief-question {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.dr-brief-thesis {
+  font-size: 14px;
+  color: var(--dr-ink-soft, #334155);
+  margin: 0 0 14px;
+}
+
+.dr-grounding-badge {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--dr-ink-muted, #64748b);
+  background: var(--dr-surface, #ffffff);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.dr-brief-section {
+  margin-top: 14px;
+}
+
+.dr-brief-questions {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--dr-hairline, #e2e8f0);
+}
+
+/* ---------------------------------------------------------------- *
+ * Open Questions (inline in the brief, or standalone in preview)   *
+ * ---------------------------------------------------------------- */
+
+.dr-open-questions {
+  margin-top: 4px;
+}
+
+.dr-question-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--dr-hairline-soft, #f1f5f9);
+}
+
+.dr-question-row:last-child {
+  border-bottom: none;
+}
+
+.dr-question-text {
+  font-size: 13px;
+  color: var(--dr-ink, #0f172a);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- *
+ * Tradeoff matrix                                                  *
+ * ---------------------------------------------------------------- */
+
+.dr-table-scroll {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.dr-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dr-table thead tr {
+  background: var(--dr-canvas, #f8fafc);
+}
+
+.dr-table th,
+.dr-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--dr-hairline-soft, #f1f5f9);
+  vertical-align: top;
+}
+
+.dr-table th[scope="row"] {
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+  white-space: nowrap;
+}
+
+.dr-table th[scope="col"] {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dr-ink-muted, #64748b);
+}
+
+.dr-table tr:last-child td,
+.dr-table tr:last-child th {
+  border-bottom: none;
+}
+
+.dr-sentiment-pos {
+  color: var(--dr-pos, #15803d);
+  font-weight: 600;
+}
+
+.dr-sentiment-neg {
+  color: var(--dr-neg, #b91c1c);
+  font-weight: 600;
+}
+
+.dr-sentiment-neutral {
+  color: var(--dr-ink-soft, #334155);
+}
+
+.dr-cell-empty {
+  color: var(--dr-ink-muted, #94a3b8);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------- *
+ * Risk map (3x3 likelihood x impact grid — no xyflow, brief C2)    *
+ * ---------------------------------------------------------------- */
+
+.dr-riskgrid {
+  display: grid;
+  grid-template-columns: max-content repeat(3, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dr-riskgrid-axis-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dr-ink-muted, #64748b);
+  display: flex;
+  align-items: center;
+}
+
+.dr-riskgrid-col {
+  justify-content: center;
+  padding-bottom: 4px;
+}
+
+.dr-riskgrid-row {
+  justify-content: flex-end;
+  padding-right: 8px;
+}
+
+.dr-riskgrid-cell {
+  background: var(--dr-canvas, #f8fafc);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 8px;
+  min-height: 64px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dr-risk-chip {
+  background: var(--dr-surface, #ffffff);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--dr-ink, #0f172a);
+  line-height: 1.35;
+}
+
+.dr-axis-caption {
+  font-size: 11px;
+  color: var(--dr-ink-muted, #64748b);
+  margin-top: 8px;
+}
+
+.dr-unscored,
+.dr-assumptions {
+  margin-top: 14px;
+}
+
+/* ---------------------------------------------------------------- *
+ * Timeline                                                         *
+ * ---------------------------------------------------------------- */
+
+.dr-timeline {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  position: relative;
+}
+
+.dr-timeline::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--dr-hairline, #e2e8f0);
+}
+
+.dr-timeline-item {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding: 0 0 18px 24px;
+}
+
+.dr-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.dr-timeline-dot {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dr-surface, #ffffff);
+  border: 2px solid var(--dr-accent, #4338ca);
+}
+
+.dr-timeline-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+  font-size: 13px;
+}
+
+.dr-timeline-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--dr-ink-muted, #64748b);
+}
+
+/* ---------------------------------------------------------------- *
+ * Action checklist                                                 *
+ * ---------------------------------------------------------------- */
+
+.dr-checklist {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dr-checklist-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dr-checklist-row input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--dr-accent, #4338ca);
+}
+
+.dr-checklist-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dr-checklist-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+}
+
+.dr-checklist-done {
+  text-decoration: line-through;
+  color: var(--dr-ink-muted, #94a3b8);
+  font-weight: 500;
+}
+
+.dr-checklist-meta {
+  font-size: 12px;
+  color: var(--dr-ink-muted, #64748b);
+}
+
+/* ---------------------------------------------------------------- *
+ * Mind map / argument map (xyflow) — cards + shell only; layout is *
+ * computed in the component (no CSS positioning here).             *
+ * ---------------------------------------------------------------- */
+
+.dr-graph-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.dr-flow-shell {
+  height: 440px;
+  background: var(--dr-canvas, #f8fafc);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.dr-flow-caption {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dr-ink-muted, #94a3b8);
+}
+
+.dr-flow-card {
+  background: var(--dr-surface, #ffffff);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 160px;
+  max-width: 220px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.dr-flow-card-kind {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dr-ink-muted, #64748b);
+  margin-bottom: 2px;
+}
+
+.dr-flow-card-title {
+  display: block;
+  font-weight: 600;
+  color: var(--dr-ink, #0f172a);
+}
+
+.dr-tint-accent {
+  border-left-color: var(--dr-accent, #4338ca);
+}
+.dr-tint-accent .dr-flow-card-kind {
+  color: var(--dr-accent, #4338ca);
+}
+
+.dr-tint-pos {
+  border-left-color: var(--dr-pos, #15803d);
+}
+.dr-tint-pos .dr-flow-card-kind {
+  color: var(--dr-pos, #15803d);
+}
+
+.dr-tint-neg {
+  border-left-color: var(--dr-neg, #b91c1c);
+}
+.dr-tint-neg .dr-flow-card-kind {
+  color: var(--dr-neg, #b91c1c);
+}
+
+.dr-tint-risk {
+  border-left-color: var(--dr-risk, #b45309);
+}
+.dr-tint-risk .dr-flow-card-kind {
+  color: var(--dr-risk, #b45309);
+}
+
+.dr-tint-neutral {
+  border-left-color: var(--dr-hairline, #e2e8f0);
+}

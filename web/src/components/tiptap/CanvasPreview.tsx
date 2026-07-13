@@ -14,6 +14,7 @@ import type { SemanticArtifact } from "htmlcollab-app/semantic";
 import { useMemo } from "react";
 import SemanticArtifactEditor from "./SemanticArtifactEditor";
 import RoundTripProbe from "./RoundTripProbe";
+import "@/app/decision-room.css";
 
 export default function CanvasPreview({
   artifact,
@@ -24,9 +25,11 @@ export default function CanvasPreview({
 
   return (
     // Full-bleed light wrapper so this dev route reads calm/light end-to-end.
-    // Scoped to the preview only — does NOT touch globals.css / flip the global
-    // body (brief C1). Phase 5 introduces the real scoped decision-room.css.
-    <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
+    // `.decision-room-root` (Phase 5, decision-room.css) provides the scoped
+    // light token layer the real web/src/components/visual/* bodies read via
+    // var(--dr-*, fallback) — does NOT touch globals.css / flip the global
+    // body (brief C1).
+    <div className="decision-room-root" style={{ minHeight: "100vh", background: "#f8fafc" }}>
       <div style={{ maxWidth: 880, margin: "0 auto", padding: 24 }}>
         <header style={{ marginBottom: 8 }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", margin: 0 }}>

@@ -42,34 +42,47 @@ export default function RiskMap({ block, nodes }: RiskMapProps) {
     <div className="dr-card" data-visual-block-id={block.id}>
       <h3 className="dr-heading">{block.title}</h3>
 
-      <div className="dr-riskgrid" role="table" aria-label="Risks by likelihood and impact">
-        <div />
+      <div className="dr-riskgrid" aria-label="Risks by likelihood and impact">
+        {/* Row 1: likelihood axis title over the three columns */}
+        <div className="dr-riskgrid-corner" />
+        <div className="dr-riskgrid-axis-title dr-likelihood">Likelihood</div>
+        {/* Row 2: column headers */}
+        <div className="dr-riskgrid-corner" />
         {LEVELS.map((l) => (
           <div key={`col-${l}`} className="dr-riskgrid-axis-label dr-riskgrid-col">
             {l}
           </div>
         ))}
-        {[...LEVELS].reverse().map((impact) => (
+        {/* Rows 3-5: rotated impact title (spans all rows) + row label + cells */}
+        {[...LEVELS].reverse().map((impact, rowIdx) => (
           <Fragment key={`row-${impact}`}>
+            {rowIdx === 0 ? (
+              <div className="dr-riskgrid-axis-title dr-impact">Impact</div>
+            ) : null}
             <div className="dr-riskgrid-axis-label dr-riskgrid-row">{impact}</div>
-            {LEVELS.map((likelihood) => (
-              <div key={`${impact}-${likelihood}`} className="dr-riskgrid-cell">
-                {cellRisks(likelihood, impact).map((r) => (
-                  <div
-                    key={r.id}
-                    className="dr-risk-chip"
-                    data-semantic-node-id={r.id}
-                    title={r.summary}
-                  >
-                    {nodeDisplayTitle(r)}
-                  </div>
-                ))}
-              </div>
-            ))}
+            {LEVELS.map((likelihood) => {
+              const severity = LEVELS.indexOf(likelihood) + LEVELS.indexOf(impact);
+              return (
+                <div
+                  key={`${impact}-${likelihood}`}
+                  className={`dr-riskgrid-cell dr-sev-${severity}`}
+                >
+                  {cellRisks(likelihood, impact).map((r) => (
+                    <div
+                      key={r.id}
+                      className="dr-risk-chip"
+                      data-semantic-node-id={r.id}
+                      title={r.summary}
+                    >
+                      {nodeDisplayTitle(r)}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </Fragment>
         ))}
       </div>
-      <p className="dr-axis-caption">Columns: likelihood · Rows: impact (high at top)</p>
 
       {unscored.length ? (
         <div className="dr-unscored">

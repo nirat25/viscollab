@@ -3,31 +3,38 @@
 /**
  * MindMapView (VISUI-002) — @xyflow/react, read-only. Controlled nodes/edges
  * derived from `MindMapBlock` via useMemo; deterministic hand-rolled layout
- * (NO layout dependency like dagre): BFS tiers outward from the root, root at
- * center-left, each tier a column to its right. Nodes the block's relationship
- * graph never reaches from the root (disconnected components, or singleton
- * nodes with no edges at all) land in one trailing "unconnected" column so
- * every nodeId the plan named is still rendered — never silently dropped.
+ * (NO layout dependency like dagre):
+ *
+ *  - The graph shows ONLY the root's connected component (the reasoning
+ *    actually linked to the decision), as BFS tier columns left -> right.
+ *    Column pitch > card width and row pitch > card height BY CONSTRUCTION,
+ *    so boxes can never overlap — and a compact canvas keeps fitView zoomed
+ *    in close enough that edges, arrows, and labels stay clearly readable.
+ *  - Everything else — singletons AND small satellite clusters (e.g.
+ *    action -> owner pairs, which Timeline/Checklist already show) — renders
+ *    as a quiet "Not linked to the decision" chip strip below the canvas
+ *    (still carrying data-semantic-node-id, so Phase-7 anchoring works).
  *
  * Imported by VisualBlockNodeView via `next/dynamic { ssr:false }` (xyflow
- * touches `window`). Editing fully disabled; panning/zoom allowed.
+ * touches `window`). Editing fully disabled; pan allowed, wheel scrolls the
+ * page (zoom via the +/- controls) so the canvas never traps page scroll.
  */
 
 import { useMemo } from "react";
 import {
   Background,
   Controls,
-  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   type Edge,
   type Node,
 } from "@xyflow/react";
 import type { MindMapBlock } from "htmlcollab-app/visual";
+import type { SemanticNode } from "htmlcollab-app/semantic";
 import {
   EmptyState,
   FlowCardNode,
-  formatRelation,
+  calmEdge,
   kindLabel,
   kindTint,
   lookupNodes,
@@ -42,10 +49,10 @@ import "@xyflow/react/dist/style.css";
 
 const nodeTypes = { flowCard: FlowCardNode };
 
-const COL_W = 220;
-const ROW_H = 76;
-/** Max rows per "Unlinked" column (review SF#3 — one tall column defeats fitView). */
-const UNLINKED_COL_ROWS = 5;
+/** Card is a fixed 200px wide (decision-room.css) and ~2 lines tall.
+ *  Pitches leave explicit gutters so overlap is impossible by construction. */
+const COL_W = 290; // 200 card + 90 gutter for the edge label
+const ROW_H = 110;
 
 export interface MindMapViewProps {
   block: MindMapBlock;
@@ -53,9 +60,12 @@ export interface MindMapViewProps {
 }
 
 export default function MindMapView({ block, nodes }: MindMapViewProps) {
-  const { flowNodes, flowEdges } = useMemo(() => buildGraph(block, nodes), [block, nodes]);
+  const { flowNodes, flowEdges, unlinked } = useMemo(
+    () => buildGraph(block, nodes),
+    [block, nodes]
+  );
 
-  if (!flowNodes.length) {
+  if (!flowNodes.length && !unlinked.length) {
     return (
       <div className="dr-graph-block" data-visual-block-id={block.id}>
         <h3 className="dr-heading">{block.title}</h3>
@@ -67,23 +77,48 @@ export default function MindMapView({ block, nodes }: MindMapViewProps) {
   return (
     <div className="dr-graph-block" data-visual-block-id={block.id}>
       <h3 className="dr-heading">{block.title}</h3>
-      <div className="dr-flow-shell">
-        <ReactFlowProvider>
-          <ReactFlow
-            nodes={flowNodes}
-            edges={flowEdges}
-            nodeTypes={nodeTypes}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={false}
-          >
-            <Background gap={20} color="var(--dr-hairline, #e2e8f0)" />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </ReactFlowProvider>
-      </div>
+      {flowNodes.length ? (
+        <div className="dr-flow-shell">
+          <ReactFlowProvider>
+            <ReactFlow
+              nodes={flowNodes}
+              edges={flowEdges}
+              nodeTypes={nodeTypes}
+              fitView
+              fitViewOptions={{ padding: 0.15 }}
+              minZoom={0.3}
+              maxZoom={1.5}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={false}
+              zoomOnScroll={false}
+              preventScrolling={false}
+            >
+              <Background gap={20} color="var(--dr-hairline, #e2e8f0)" />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </ReactFlowProvider>
+        </div>
+      ) : null}
+
+      {unlinked.length ? (
+        <div className="dr-unlinked">
+          <p className="dr-label">Not linked to the decision</p>
+          <ul className="dr-list dr-chip-row">
+            {unlinked.map((n) => (
+              <li
+                key={n.id}
+                className="dr-chip"
+                data-semantic-node-id={n.id}
+                title={n.summary}
+              >
+                <span className="dr-chip-meta">{kindLabel(n.kind)}</span>{" "}
+                <span className="dr-chip-title">{nodeDisplayTitle(n)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -91,9 +126,9 @@ export default function MindMapView({ block, nodes }: MindMapViewProps) {
 function buildGraph(
   block: MindMapBlock,
   nodeMap: SemanticNodeMap
-): { flowNodes: Node[]; flowEdges: Edge[] } {
+): { flowNodes: Node[]; flowEdges: Edge[]; unlinked: SemanticNode[] } {
   const semanticNodes = lookupNodes(block.nodeIds, nodeMap);
-  if (!semanticNodes.length) return { flowNodes: [], flowEdges: [] };
+  if (!semanticNodes.length) return { flowNodes: [], flowEdges: [], unlinked: [] };
 
   // Undirected adjacency for tiering — the mind map's edges are relationship
   // edges (supports/dependsOn/ownedBy/...), not a strict hierarchy; treat
@@ -108,105 +143,76 @@ function buildGraph(
     link(e.to, e.from);
   }
 
+  // BFS tiers outward from the root. Whatever the BFS reaches IS the mind
+  // map; everything else goes to the chip strip.
   const rootId =
-    block.rootId && nodeMap.has(block.rootId) ? block.rootId : semanticNodes[0].id;
+    block.rootId && adjacency.has(block.rootId)
+      ? block.rootId
+      : semanticNodes.find((n) => adjacency.has(n.id))?.id;
   const tierOf = new Map<string, number>();
-  const queue: string[] = [rootId];
-  tierOf.set(rootId, 0);
-  while (queue.length) {
-    const current = queue.shift()!;
-    const tier = tierOf.get(current) ?? 0;
-    for (const next of adjacency.get(current) ?? []) {
-      if (!tierOf.has(next)) {
-        tierOf.set(next, tier + 1);
-        queue.push(next);
+  if (rootId) {
+    const queue = [rootId];
+    tierOf.set(rootId, 0);
+    while (queue.length) {
+      const current = queue.shift()!;
+      const tier = tierOf.get(current)!;
+      for (const next of adjacency.get(current) ?? []) {
+        if (!tierOf.has(next)) {
+          tierOf.set(next, tier + 1);
+          queue.push(next);
+        }
       }
     }
   }
-  const maxTier = Math.max(0, ...tierOf.values());
-  const unconnectedTier = maxTier + 1;
 
-  // Group nodes by tier, preserving nodeIds order within each tier
-  // (deterministic — matches the planner's extraction-order output).
+  const unlinked = semanticNodes.filter((n) => !tierOf.has(n.id));
+
+  // Group by tier preserving nodeIds order (deterministic — matches the
+  // planner's extraction-order output), columns centered vertically.
   const byTier = new Map<number, string[]>();
   for (const n of semanticNodes) {
-    const tier = tierOf.get(n.id) ?? unconnectedTier;
+    const tier = tierOf.get(n.id);
+    if (tier === undefined) continue;
     if (!byTier.has(tier)) byTier.set(tier, []);
     byTier.get(tier)!.push(n.id);
   }
 
   const flowNodes: Node[] = [];
-  const pushCard = (id: string, x: number, y: number) => {
-    const n = nodeMap.get(id);
-    if (!n) return;
-    const data: FlowCardData = {
-      title: nodeDisplayTitle(n),
-      kindText: kindLabel(n.kind),
-      tint: kindTint(n.kind),
-      direction: "horizontal",
-    };
-    flowNodes.push({
-      id,
-      type: "flowCard",
-      position: { x, y },
-      data,
-      draggable: false,
-      selectable: false,
-    });
-  };
-
   for (const [tier, ids] of byTier) {
-    if (tier === unconnectedTier) continue; // handled below, chunked
     const startY = -((ids.length - 1) * ROW_H) / 2;
-    ids.forEach((id, i) => pushCard(id, tier * COL_W, startY + i * ROW_H));
-  }
-
-  // Unconnected nodes: one tall column shrinks fitView until everything is
-  // confetti, so chunk into short columns of UNLINKED_COL_ROWS under a small
-  // "Unlinked" caption (a layout label, not a semantic node).
-  const unlinked = byTier.get(unconnectedTier) ?? [];
-  if (unlinked.length > 0) {
-    const chunkCount = Math.ceil(unlinked.length / UNLINKED_COL_ROWS);
-    const tallest = Math.min(unlinked.length, UNLINKED_COL_ROWS);
-    const startY = -((tallest - 1) * ROW_H) / 2;
-    flowNodes.push({
-      id: "__unlinked_caption",
-      type: "flowCard",
-      position: { x: unconnectedTier * COL_W, y: startY - ROW_H },
-      data: {
-        title: "Unlinked",
-        kindText: "",
-        tint: "neutral",
+    ids.forEach((id, i) => {
+      const n = nodeMap.get(id);
+      if (!n) return;
+      const data: FlowCardData = {
+        title: nodeDisplayTitle(n),
+        kindText: kindLabel(n.kind),
+        tint: kindTint(n.kind),
         direction: "horizontal",
-        caption: true,
-      } satisfies FlowCardData,
-      draggable: false,
-      selectable: false,
+        emphasis: id === rootId,
+      };
+      flowNodes.push({
+        id,
+        type: "flowCard",
+        position: { x: tier * COL_W, y: startY + i * ROW_H },
+        data,
+        draggable: false,
+        selectable: false,
+      });
     });
-    for (let c = 0; c < chunkCount; c++) {
-      const chunk = unlinked.slice(c * UNLINKED_COL_ROWS, (c + 1) * UNLINKED_COL_ROWS);
-      chunk.forEach((id, i) =>
-        pushCard(id, (unconnectedTier + c) * COL_W, startY + i * ROW_H)
-      );
-    }
   }
 
-  const flowEdges: Edge[] = block.edges.map((e, i) => ({
-    id: `${e.from}->${e.to}-${i}`,
-    source: e.from,
-    target: e.to,
-    type: "smoothstep",
-    label: formatRelation(e.relation),
-    labelStyle: { fill: "var(--dr-ink-soft, #334155)", fontSize: 10 },
-    labelBgStyle: { fill: "var(--dr-surface, #ffffff)" },
-    style: { stroke: "var(--dr-ink-muted, #94a3b8)", strokeWidth: 1.4 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "var(--dr-ink-muted, #94a3b8)",
-      width: 14,
-      height: 14,
-    },
-  }));
+  // Only edges whose BOTH endpoints are in the graph (satellite-cluster edges
+  // have no cards to connect — their nodes live in the chip strip).
+  const flowEdges: Edge[] = block.edges
+    .filter((e) => tierOf.has(e.from) && tierOf.has(e.to))
+    .map((e, i) =>
+      calmEdge({
+        id: `${e.from}->${e.to}-${i}`,
+        source: e.from,
+        target: e.to,
+        relation: e.relation,
+      })
+    );
 
-  return { flowNodes, flowEdges };
+  return { flowNodes, flowEdges, unlinked };
 }

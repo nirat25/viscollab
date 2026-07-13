@@ -14,7 +14,6 @@ import { useMemo } from "react";
 import {
   Background,
   Controls,
-  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   type Edge,
@@ -28,6 +27,7 @@ import "@xyflow/react/dist/style.css";
 import {
   EmptyState,
   FlowCardNode,
+  calmEdge,
   kindLabel,
   kindTint,
   lookupNodes,
@@ -38,8 +38,10 @@ import {
 
 const nodeTypes = { flowCard: FlowCardNode };
 
-const COL_W = 200;
-const ROW_H = 130;
+/** Card is a fixed 200px wide (decision-room.css); pitches leave explicit
+ *  gutters so cards can never overlap and edge labels have room. */
+const COL_W = 260;
+const ROW_H = 190;
 
 export interface ArgumentMapViewProps {
   block: ArgumentMapBlock;
@@ -68,10 +70,14 @@ export default function ArgumentMapView({ block, nodes }: ArgumentMapViewProps) 
             edges={flowEdges}
             nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.2 }}
+            fitViewOptions={{ padding: 0.15 }}
+            minZoom={0.3}
+            maxZoom={1.5}
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable={false}
+            zoomOnScroll={false}
+            preventScrolling={false}
           >
             <Background gap={20} color="var(--dr-hairline, #e2e8f0)" />
             <Controls showInteractive={false} />
@@ -114,6 +120,7 @@ function buildGraph(
         kindText: kindLabel(n.kind),
         tint: kindTint(n.kind),
         direction: "vertical",
+        emphasis: n.kind === "decision",
       };
       flowNodes.push({
         id,
@@ -126,29 +133,15 @@ function buildGraph(
     });
   }
 
-  const flowEdges: Edge[] = block.edges.map((e, i) => {
-    const contradicts = e.relation === "contradicts";
-    return {
+  const flowEdges: Edge[] = block.edges.map((e, i) =>
+    calmEdge({
       id: `${e.from}->${e.to}-${i}`,
       source: e.from,
       target: e.to,
-      type: "smoothstep",
-      label: contradicts ? "contradicts" : "supports",
-      labelStyle: { fill: "var(--dr-ink-soft, #334155)", fontSize: 10 },
-      labelBgStyle: { fill: "var(--dr-surface, #ffffff)" },
-      style: {
-        stroke: contradicts ? "var(--dr-neg, #b91c1c)" : "var(--dr-ink-muted, #94a3b8)",
-        strokeWidth: 1.4,
-        strokeDasharray: contradicts ? "5 4" : undefined,
-      },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: contradicts ? "var(--dr-neg, #b91c1c)" : "var(--dr-ink-muted, #94a3b8)",
-        width: 14,
-        height: 14,
-      },
-    };
-  });
+      relation: e.relation,
+      negative: e.relation === "contradicts",
+    })
+  );
 
   return { flowNodes, flowEdges };
 }

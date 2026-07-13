@@ -333,9 +333,36 @@
 
 .dr-riskgrid {
   display: grid;
-  grid-template-columns: max-content repeat(3, minmax(120px, 1fr));
+  /* [impact axis title] [row labels] [3 cells] */
+  grid-template-columns: 20px max-content repeat(3, minmax(120px, 1fr));
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 12px;
+}
+
+.dr-riskgrid-axis-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dr-ink-soft, #334155);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dr-riskgrid-axis-title.dr-likelihood {
+  grid-column: 3 / span 3;
+  padding-bottom: 2px;
+}
+
+.dr-riskgrid-axis-title.dr-impact {
+  grid-row: span 3;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.dr-riskgrid-corner {
+  grid-column: 1 / span 2;
 }
 
 .dr-riskgrid-axis-label {
@@ -355,23 +382,30 @@
 
 .dr-riskgrid-row {
   justify-content: flex-end;
-  padding-right: 8px;
+  padding-right: 10px;
 }
 
 .dr-riskgrid-cell {
   background: var(--dr-canvas, #f8fafc);
   border: 1px solid var(--dr-hairline, #e2e8f0);
   border-radius: 8px;
-  min-height: 64px;
+  min-height: 72px;
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+/* Flat severity tints (likelihood index + impact index, 0..4) — calm, no
+ * gradients; the hot corner reads warmer without shouting. */
+.dr-riskgrid-cell.dr-sev-2 { background: rgba(180, 83, 9, 0.04); }
+.dr-riskgrid-cell.dr-sev-3 { background: rgba(180, 83, 9, 0.07); border-color: rgba(180, 83, 9, 0.18); }
+.dr-riskgrid-cell.dr-sev-4 { background: rgba(180, 83, 9, 0.11); border-color: rgba(180, 83, 9, 0.28); }
+
 .dr-risk-chip {
   background: var(--dr-surface, #ffffff);
   border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-left: 3px solid var(--dr-risk, #b45309);
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 12px;
@@ -379,10 +413,8 @@
   line-height: 1.35;
 }
 
-.dr-axis-caption {
-  font-size: 11px;
-  color: var(--dr-ink-muted, #64748b);
-  margin-top: 8px;
+.dr-unlinked {
+  margin-top: 12px;
 }
 
 .dr-unscored,
@@ -510,24 +542,26 @@
   overflow: hidden;
 }
 
-.dr-flow-caption {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dr-ink-muted, #94a3b8);
-}
-
 .dr-flow-card {
   background: var(--dr-surface, #ffffff);
   border: 1px solid var(--dr-hairline, #e2e8f0);
   border-left-width: 3px;
   border-radius: 8px;
   padding: 8px 12px;
-  min-width: 160px;
-  max-width: 220px;
+  width: 200px; /* FIXED: graph layout constants assume this exact width */
   font-size: 12px;
   line-height: 1.35;
+  box-sizing: border-box;
+}
+
+/* Root/anchor node of a graph (the decision at a mind map's center). */
+.dr-flow-card-root {
+  border-color: var(--dr-accent, #4f46e5);
+  border-left-width: 4px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.dr-flow-card-root .dr-flow-card-title {
+  font-weight: 700;
 }
 
 .dr-flow-card-kind {

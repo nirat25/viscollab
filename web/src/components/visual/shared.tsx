@@ -10,7 +10,7 @@
  * restrained kind→tint mapping aren't duplicated per graph view.
  */
 
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, MarkerType, Position, type Edge, type NodeProps } from "@xyflow/react";
 import type {
   SemanticNode,
   SemanticNodeId,
@@ -118,9 +118,8 @@ export interface FlowCardData extends Record<string, unknown> {
   /** "horizontal" = tiers left->right (MindMap); "vertical" = layers
    *  top->bottom (ArgumentMap). Controls which edges the handles sit on. */
   direction: "horizontal" | "vertical";
-  /** Layout caption (e.g. the "Unlinked" column label) — NOT a semantic node:
-   *  rendered without data-semantic-node-id so Phase-7 queries never match it. */
-  caption?: boolean;
+  /** Visually anchor this card (the graph's root/decision node). */
+  emphasis?: boolean;
 }
 
 /** Shared read-only xyflow node — a simple labeled card, kind-tinted via a
@@ -129,18 +128,57 @@ export interface FlowCardData extends Record<string, unknown> {
  *  that satisfies the data-semantic-node-id contract for graph views. */
 export function FlowCardNode({ id, data }: NodeProps) {
   const d = data as unknown as FlowCardData;
-  if (d.caption) {
-    return <div className="dr-flow-caption">{d.title}</div>;
-  }
   const vertical = d.direction === "vertical";
   const targetPosition = vertical ? Position.Bottom : Position.Left;
   const sourcePosition = vertical ? Position.Top : Position.Right;
+  const emphasisClass = d.emphasis ? " dr-flow-card-root" : "";
   return (
-    <div className={`dr-flow-card dr-tint-${d.tint}`} data-semantic-node-id={id}>
+    <div
+      className={`dr-flow-card dr-tint-${d.tint}${emphasisClass}`}
+      data-semantic-node-id={id}
+    >
       <Handle type="target" position={targetPosition} style={{ opacity: 0 }} />
       <span className="dr-flow-card-kind">{d.kindText}</span>
       <span className="dr-flow-card-title">{d.title}</span>
       <Handle type="source" position={sourcePosition} style={{ opacity: 0 }} />
     </div>
   );
+}
+
+/** One calm-but-VISIBLE edge style for every graph view: solid ink stroke
+ *  (not the faint muted gray that vanished at fitView zoom), closed arrowhead,
+ *  white-backed relation label. `negative` renders dashed in the risk tint
+ *  (contradicts). */
+export function calmEdge(opts: {
+  id: string;
+  source: string;
+  target: string;
+  relation?: string;
+  negative?: boolean;
+}): Edge {
+  const stroke = opts.negative
+    ? "var(--dr-neg, #b91c1c)"
+    : "var(--dr-ink-soft, #475569)";
+  return {
+    id: opts.id,
+    source: opts.source,
+    target: opts.target,
+    type: "smoothstep",
+    ...(opts.relation ? { label: formatRelation(opts.relation) } : {}),
+    labelStyle: { fill: "var(--dr-ink-soft, #334155)", fontSize: 11, fontWeight: 600 },
+    labelBgStyle: { fill: "var(--dr-surface, #ffffff)", fillOpacity: 0.9 },
+    labelBgPadding: [6, 3] as [number, number],
+    labelBgBorderRadius: 4,
+    style: {
+      stroke,
+      strokeWidth: 2,
+      ...(opts.negative ? { strokeDasharray: "6 4" } : {}),
+    },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: stroke,
+      width: 18,
+      height: 18,
+    },
+  };
 }

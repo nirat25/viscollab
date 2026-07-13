@@ -611,3 +611,34 @@
 .dr-tint-neutral {
   border-left-color: var(--dr-hairline, #e2e8f0);
 }
+
+/* Relation legend strip under a graph canvas — the key for the color-coded
+ * edges (the mind map drops per-edge text labels in favor of this). */
+.dr-flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--dr-ink-muted, #64748b);
+}
+
+.dr-flow-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Colored line sample — `color` is set inline per relation; the rule maps it
+ * onto the border so solid vs dashed matches the edge stroke. */
+.dr-flow-legend-line {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+
+.dr-flow-legend-line-dashed {
+  border-top-style: dashed;
+}

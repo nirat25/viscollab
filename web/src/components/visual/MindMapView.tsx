@@ -34,11 +34,14 @@ import type { SemanticNode } from "htmlcollab-app/semantic";
 import {
   EmptyState,
   FlowCardNode,
+  RelationLegend,
   calmEdge,
   kindLabel,
   kindTint,
   lookupNodes,
   nodeDisplayTitle,
+  sourceHandleId,
+  targetHandleId,
   type FlowCardData,
   type SemanticNodeMap,
 } from "./shared";
@@ -60,7 +63,7 @@ export interface MindMapViewProps {
 }
 
 export default function MindMapView({ block, nodes }: MindMapViewProps) {
-  const { flowNodes, flowEdges, unlinked } = useMemo(
+  const { flowNodes, flowEdges, unlinked, relationsPresent } = useMemo(
     () => buildGraph(block, nodes),
     [block, nodes]
   );
@@ -101,6 +104,8 @@ export default function MindMapView({ block, nodes }: MindMapViewProps) {
         </div>
       ) : null}
 
+      {flowNodes.length ? <RelationLegend relations={relationsPresent} /> : null}
+
       {unlinked.length ? (
         <div className="dr-unlinked">
           <p className="dr-label">Not linked to the decision</p>
@@ -126,9 +131,15 @@ export default function MindMapView({ block, nodes }: MindMapViewProps) {
 function buildGraph(
   block: MindMapBlock,
   nodeMap: SemanticNodeMap
-): { flowNodes: Node[]; flowEdges: Edge[]; unlinked: SemanticNode[] } {
+): {
+  flowNodes: Node[];
+  flowEdges: Edge[];
+  unlinked: SemanticNode[];
+  relationsPresent: string[];
+} {
   const semanticNodes = lookupNodes(block.nodeIds, nodeMap);
-  if (!semanticNodes.length) return { flowNodes: [], flowEdges: [], unlinked: [] };
+  if (!semanticNodes.length)
+    return { flowNodes: [], flowEdges: [], unlinked: [], relationsPresent: [] };
 
   // Undirected adjacency for tiering — the mind map's edges are relationship
   // edges (supports/dependsOn/ownedBy/...), not a strict hierarchy; treat
@@ -203,16 +214,36 @@ function buildGraph(
 
   // Only edges whose BOTH endpoints are in the graph (satellite-cluster edges
   // have no cards to connect — their nodes live in the chip strip).
-  const flowEdges: Edge[] = block.edges
-    .filter((e) => tierOf.has(e.from) && tierOf.has(e.to))
-    .map((e, i) =>
-      calmEdge({
-        id: `${e.from}->${e.to}-${i}`,
-        source: e.from,
-        target: e.to,
-        relation: e.relation,
-      })
-    );
+  const linkedEdges = block.edges.filter(
+    (e) => tierOf.has(e.from) && tierOf.has(e.to)
+  );
 
-  return { flowNodes, flowEdges, unlinked };
+  // Spread parallel edges across distinct handle slots so several curves
+  // leaving (or entering) the SAME card don't stack on one point: assign each
+  // edge the next source slot on its `from` card and the next target slot on
+  // its `to` card (round-robin over the slots FlowCardNode renders).
+  const sourceSeq = new Map<string, number>();
+  const targetSeq = new Map<string, number>();
+  const bump = (seq: Map<string, number>, key: string) => {
+    const i = seq.get(key) ?? 0;
+    seq.set(key, i + 1);
+    return i;
+  };
+
+  // No per-edge text labels here (they merged ambiguously in the gutter) — the
+  // relation legend under the canvas carries each colored curve's meaning.
+  const flowEdges: Edge[] = linkedEdges.map((e, i) =>
+    calmEdge({
+      id: `${e.from}->${e.to}-${i}`,
+      source: e.from,
+      target: e.to,
+      relation: e.relation,
+      sourceHandle: sourceHandleId(bump(sourceSeq, e.from)),
+      targetHandle: targetHandleId(bump(targetSeq, e.to)),
+    })
+  );
+
+  const relationsPresent = [...new Set(linkedEdges.map((e) => e.relation))];
+
+  return { flowNodes, flowEdges, unlinked, relationsPresent };
 }

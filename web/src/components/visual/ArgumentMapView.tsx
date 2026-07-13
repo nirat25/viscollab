@@ -32,6 +32,8 @@ import {
   kindTint,
   lookupNodes,
   nodeDisplayTitle,
+  sourceHandleId,
+  targetHandleId,
   type FlowCardData,
   type SemanticNodeMap,
 } from "./shared";
@@ -133,13 +135,26 @@ function buildGraph(
     });
   }
 
+  // Spread parallel edges across handle slots (same round-robin as the mind
+  // map) so multiple supports/contradicts into one claim/decision separate.
+  // Few edges here, so per-edge labels stay ON (showLabel) — they read fine.
+  const sourceSeq = new Map<string, number>();
+  const targetSeq = new Map<string, number>();
+  const bump = (seq: Map<string, number>, key: string) => {
+    const i = seq.get(key) ?? 0;
+    seq.set(key, i + 1);
+    return i;
+  };
+
   const flowEdges: Edge[] = block.edges.map((e, i) =>
     calmEdge({
       id: `${e.from}->${e.to}-${i}`,
       source: e.from,
       target: e.to,
       relation: e.relation,
-      negative: e.relation === "contradicts",
+      showLabel: true,
+      sourceHandle: sourceHandleId(bump(sourceSeq, e.from)),
+      targetHandle: targetHandleId(bump(targetSeq, e.to)),
     })
   );
 

@@ -122,63 +122,172 @@ export interface FlowCardData extends Record<string, unknown> {
   emphasis?: boolean;
 }
 
+/** How many connection slots each card side exposes (see FlowCardNode). Edges
+ *  round-robin across these so parallel edges on one card don't stack. */
+export const HANDLE_SLOTS = 3;
+export function sourceHandleId(i: number): string {
+  return `s${((i % HANDLE_SLOTS) + HANDLE_SLOTS) % HANDLE_SLOTS}`;
+}
+export function targetHandleId(i: number): string {
+  return `t${((i % HANDLE_SLOTS) + HANDLE_SLOTS) % HANDLE_SLOTS}`;
+}
+
+/** Evenly spread N handles along a side: for 3 slots -> 25% / 50% / 75%. */
+const SLOT_OFFSETS = Array.from(
+  { length: HANDLE_SLOTS },
+  (_, i) => `${((i + 1) / (HANDLE_SLOTS + 1)) * 100}%`
+);
+
 /** Shared read-only xyflow node — a simple labeled card, kind-tinted via a
  *  left accent stripe. `id` is supplied by xyflow (== the semantic node id,
  *  since callers set `node.id = semanticNode.id`), so this is the element
- *  that satisfies the data-semantic-node-id contract for graph views. */
+ *  that satisfies the data-semantic-node-id contract for graph views.
+ *
+ *  Each side exposes HANDLE_SLOTS invisible handles (ids s0..sN / t0..tN)
+ *  spread along the edge so callers route parallel edges to distinct points
+ *  instead of one shared handle. Both graph views set an explicit
+ *  source/target handle id per edge (xyflow needs one when >1 handle exists). */
 export function FlowCardNode({ id, data }: NodeProps) {
   const d = data as unknown as FlowCardData;
   const vertical = d.direction === "vertical";
   const targetPosition = vertical ? Position.Bottom : Position.Left;
   const sourcePosition = vertical ? Position.Top : Position.Right;
   const emphasisClass = d.emphasis ? " dr-flow-card-root" : "";
+  // Offsets run along the free axis of each side (down a vertical side, across
+  // a horizontal side).
+  const along = (offset: string) =>
+    vertical ? { left: offset } : { top: offset };
   return (
     <div
       className={`dr-flow-card dr-tint-${d.tint}${emphasisClass}`}
       data-semantic-node-id={id}
     >
-      <Handle type="target" position={targetPosition} style={{ opacity: 0 }} />
+      {SLOT_OFFSETS.map((offset, i) => (
+        <Handle
+          key={`t${i}`}
+          id={`t${i}`}
+          type="target"
+          position={targetPosition}
+          style={{ opacity: 0, ...along(offset) }}
+        />
+      ))}
       <span className="dr-flow-card-kind">{d.kindText}</span>
       <span className="dr-flow-card-title">{d.title}</span>
-      <Handle type="source" position={sourcePosition} style={{ opacity: 0 }} />
+      {SLOT_OFFSETS.map((offset, i) => (
+        <Handle
+          key={`s${i}`}
+          id={`s${i}`}
+          type="source"
+          position={sourcePosition}
+          style={{ opacity: 0, ...along(offset) }}
+        />
+      ))}
     </div>
   );
 }
 
-/** One calm-but-VISIBLE edge style for every graph view: solid ink stroke
- *  (not the faint muted gray that vanished at fitView zoom), closed arrowhead,
- *  white-backed relation label. `negative` renders dashed in the risk tint
- *  (contradicts). */
+/** Relation-kind -> calm stroke + dash. This is the disambiguation carrier:
+ *  once every edge is colored by what it MEANS, the per-edge text labels become
+ *  redundant clutter in a dense mind map (dropped there in favor of a static
+ *  legend) while staying useful in the sparse argument map. Max four muted
+ *  colors — slate / green / red / gray — never a rainbow (brief C1). */
+interface RelationVisual {
+  stroke: string;
+  dashed: boolean;
+}
+
+const RELATION_VISUALS: Record<string, RelationVisual> = {
+  dependsOn: { stroke: "var(--dr-ink-soft, #475569)", dashed: false },
+  supports: { stroke: "var(--dr-pos, #15803d)", dashed: false },
+  contradicts: { stroke: "var(--dr-neg, #b91c1c)", dashed: true },
+  blocks: { stroke: "var(--dr-neg, #b91c1c)", dashed: true },
+  ownedBy: { stroke: "var(--dr-ink-muted, #64748b)", dashed: false },
+};
+
+const DEFAULT_RELATION_VISUAL: RelationVisual = {
+  stroke: "var(--dr-ink-soft, #475569)",
+  dashed: false,
+};
+
+/** Canonical legend order — only the kinds actually present are shown. */
+export const RELATION_LEGEND_ORDER = [
+  "dependsOn",
+  "supports",
+  "contradicts",
+  "blocks",
+  "ownedBy",
+] as const;
+
+export function relationVisual(relation: string | undefined): RelationVisual {
+  return (relation ? RELATION_VISUALS[relation] : undefined) ?? DEFAULT_RELATION_VISUAL;
+}
+
+/** One calm edge style for every graph view: a BEZIER curve (type "default")
+ *  — parallel edges fan out from a shared handle and stay individually
+ *  traceable instead of merging into overlapping orthogonal segments the way
+ *  smoothstep did — colored + dashed by relation kind (`relationVisual`),
+ *  closed arrowhead in the matching color. Per-edge text label is opt-in
+ *  (`showLabel`): the mind map suppresses it (legend carries meaning), the
+ *  argument map keeps it. `sourceHandle`/`targetHandle` let a caller spread
+ *  parallel edges across distinct connection points. */
 export function calmEdge(opts: {
   id: string;
   source: string;
   target: string;
   relation?: string;
-  negative?: boolean;
+  sourceHandle?: string;
+  targetHandle?: string;
+  showLabel?: boolean;
 }): Edge {
-  const stroke = opts.negative
-    ? "var(--dr-neg, #b91c1c)"
-    : "var(--dr-ink-soft, #475569)";
+  const { stroke, dashed } = relationVisual(opts.relation);
+  const showLabel = opts.showLabel ?? false;
   return {
     id: opts.id,
     source: opts.source,
     target: opts.target,
-    type: "smoothstep",
-    ...(opts.relation ? { label: formatRelation(opts.relation) } : {}),
+    type: "default",
+    ...(opts.sourceHandle ? { sourceHandle: opts.sourceHandle } : {}),
+    ...(opts.targetHandle ? { targetHandle: opts.targetHandle } : {}),
+    ...(showLabel && opts.relation ? { label: formatRelation(opts.relation) } : {}),
     labelStyle: { fill: "var(--dr-ink-soft, #334155)", fontSize: 11, fontWeight: 600 },
     labelBgStyle: { fill: "var(--dr-surface, #ffffff)", fillOpacity: 0.9 },
     labelBgPadding: [6, 3] as [number, number],
     labelBgBorderRadius: 4,
     style: {
       stroke,
-      strokeWidth: 2,
-      ...(opts.negative ? { strokeDasharray: "6 4" } : {}),
+      strokeWidth: 1.7,
+      ...(dashed ? { strokeDasharray: "6 4" } : {}),
     },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: stroke,
-      width: 18,
-      height: 18,
+      width: 16,
+      height: 16,
     },
   };
+}
+
+/** Static key strip rendered under a graph canvas — a colored line sample +
+ *  wording per relation kind PRESENT in that graph. Lets the mind map drop
+ *  per-edge labels without losing what each colored curve means. */
+export function RelationLegend({ relations }: { relations: readonly string[] }) {
+  const present = RELATION_LEGEND_ORDER.filter((r) => relations.includes(r));
+  if (!present.length) return null;
+  return (
+    <div className="dr-flow-legend">
+      {present.map((rel) => {
+        const { stroke, dashed } = relationVisual(rel);
+        return (
+          <span className="dr-flow-legend-item" key={rel}>
+            <span
+              className={`dr-flow-legend-line${dashed ? " dr-flow-legend-line-dashed" : ""}`}
+              style={{ color: stroke }}
+              aria-hidden="true"
+            />
+            {formatRelation(rel)}
+          </span>
+        );
+      })}
+    </div>
+  );
 }

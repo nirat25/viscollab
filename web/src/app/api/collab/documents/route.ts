@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, html, workspaceId } = await request.json();
+    const { name, html, workspaceId, semanticArtifact, visualPlan } = await request.json();
     if (!name || !html || !workspaceId) {
       return NextResponse.json({ error: "Missing name, html or workspaceId" }, { status: 400 });
     }
@@ -81,12 +81,12 @@ export async function POST(request: Request) {
       ],
       activeVersionNum: 1,
       comments: [],
-      verdicts: {
-        "Sam": null,
-        "Alex": null,
-        "Priya": null,
-        "Nirat": null
-      }
+      // ROOM-005: new documents start with NO seeded reviewers — legacy demo
+      // docs keep their hard-coded seeds (INITIAL_STATE in ../route.ts is
+      // untouched); only freshly created documents get an empty verdict set.
+      verdicts: {},
+      ...(semanticArtifact ? { semanticArtifact } : {}),
+      ...(visualPlan ? { visualPlan } : {})
     };
 
     await saveState(initialState, documentId);

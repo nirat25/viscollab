@@ -6,7 +6,32 @@ import { canEdit } from "htmlcollab-app/collab";
 import { marked } from "marked";
 import { checkAndIncrementLimit } from "../limits";
 import { testSessionFallback } from "../testAuth";
+import { runSemanticPipeline, mockExtract } from "htmlcollab-app/semantic";
+import { ingestRawHtml } from "htmlcollab-app/ingest";
+import type { SemanticArtifact, SemanticPipelineOpts } from "htmlcollab-app/semantic";
+import type { TipTapDoc } from "htmlcollab-app/ingest";
+import type { VisualPlan } from "htmlcollab-app/visual";
 
+
+/**
+ * Run semantic extraction + visual planning for a completed pipeline IR.
+ * Kept in its own try/catch (docs/rebuild-architecture.md §3.3): conversion and
+ * extraction fail independently — a semantic failure must never 500 the whole
+ * conversion, it only degrades to "no decision room" with a warning.
+ */
+async function attachSemanticPipeline(
+  ir: TipTapDoc,
+  warnings: string[],
+  opts?: SemanticPipelineOpts
+): Promise<{ semanticArtifact?: SemanticArtifact; visualPlan?: VisualPlan }> {
+  try {
+    const { semanticArtifact, visualPlan } = await runSemanticPipeline(ir, opts);
+    return { semanticArtifact, visualPlan };
+  } catch (e: any) {
+    warnings.push(`semantic extraction failed: ${e?.message || String(e)}`);
+    return {};
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -35,6 +60,8 @@ export async function POST(request: Request) {
     let htmlResult = "";
     let fileName = "uploaded-doc";
     let warnings: string[] = [];
+    let semanticArtifact: SemanticArtifact | undefined;
+    let visualPlan: VisualPlan | undefined;
 
     // Check if running in mock/test environment
     const isMock = process.env.PLAYWRIGHT_TEST === "true" || process.env.MOCK_AI === "true";
@@ -56,11 +83,30 @@ export async function POST(request: Request) {
       
       // Simulate AI refinement by wrapping the content
       htmlResult = `<div id="mock-ai-refinement">${rawHtml}</div>`;
+      const mockWarnings = ["Simulated AI conversion warnings"];
+
+      // ORCHESTRATOR DECISION (BACK-012): web mock mode has no access to the
+      // app package's fixture goldens (the package `exports` map does not expose
+      // `app/tests/fixtures/*`), so mock conversion always uses mockExtract's
+      // deterministic heuristic fallback rather than a registered fixture. That
+      // heuristic is total and always schema-valid, which is sufficient for
+      // web mock/e2e mode.
+      try {
+        const ir = ingestRawHtml(rawHtml, fileName);
+        const attached = await attachSemanticPipeline(ir, mockWarnings, { extractor: mockExtract });
+        semanticArtifact = attached.semanticArtifact;
+        visualPlan = attached.visualPlan;
+      } catch (e: any) {
+        mockWarnings.push(`semantic extraction failed: ${e?.message || String(e)}`);
+      }
+
       return NextResponse.json({
         success: true,
         fileName,
         html: htmlResult,
-        warnings: ["Simulated AI conversion warnings"]
+        warnings: mockWarnings,
+        ...(semanticArtifact ? { semanticArtifact } : {}),
+        ...(visualPlan ? { visualPlan } : {})
       });
     }
 
@@ -103,6 +149,9 @@ export async function POST(request: Request) {
       if (pipelineResult.disclosure && pipelineResult.disclosure.warnings) {
         warnings = pipelineResult.disclosure.warnings;
       }
+      const attached = await attachSemanticPipeline(pipelineResult.ir, warnings);
+      semanticArtifact = attached.semanticArtifact;
+      visualPlan = attached.visualPlan;
     } else if (contentType.includes("application/json")) {
       const body = await request.json();
       if (!body.gdocHtml) {
@@ -120,6 +169,9 @@ export async function POST(request: Request) {
       if (pipelineResult.disclosure && pipelineResult.disclosure.warnings) {
         warnings = pipelineResult.disclosure.warnings;
       }
+      const attached = await attachSemanticPipeline(pipelineResult.ir, warnings);
+      semanticArtifact = attached.semanticArtifact;
+      visualPlan = attached.visualPlan;
     } else {
       return NextResponse.json({ error: "Unsupported content type" }, { status: 400 });
     }
@@ -132,7 +184,9 @@ export async function POST(request: Request) {
       success: true,
       fileName,
       html: htmlResult,
-      warnings
+      warnings,
+      ...(semanticArtifact ? { semanticArtifact } : {}),
+      ...(visualPlan ? { visualPlan } : {})
     });
   } catch (e: any) {
     console.error("Pipeline conversion error", e);

@@ -331,7 +331,7 @@ const INITIAL_STATE = {
 
 // Keys that clients are allowed to partially update.
 // Any subset of these may be sent; missing keys are left unchanged.
-const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", "notifications", "lockedSections"] as const;
+const MERGEABLE_KEYS = ["versions", "activeVersionNum", "comments", "verdicts", "notifications", "lockedSections", "semanticArtifact", "visualPlan"] as const;
 type MergeableKey = typeof MERGEABLE_KEYS[number];
 
 export async function GET(request: Request) {
@@ -421,7 +421,12 @@ export async function POST(request: Request) {
     }
 
     // Role capability assertions
-    if (sentKeys.includes("versions") || sentKeys.includes("lockedSections")) {
+    if (
+      sentKeys.includes("versions") ||
+      sentKeys.includes("lockedSections") ||
+      sentKeys.includes("semanticArtifact") ||
+      sentKeys.includes("visualPlan")
+    ) {
       if (!canEdit(role)) {
         return NextResponse.json({ error: "Forbidden: role cannot edit" }, { status: 403 });
       }

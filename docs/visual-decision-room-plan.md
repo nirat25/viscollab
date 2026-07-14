@@ -371,7 +371,26 @@ Pipeline/eval:
 11. `BACK-011` — Eval regression harness: run the semantic rubric judge over a golden set from the
     CLI; seed it with the observed LLM variance mode (quotes stitched with "…"/paraphrase — caught
     deterministically by `validateSourceTrace`; extraction prompt v2 forbids it).
-12. `BACK-012` — Decide golden-fixture access for web mock mode: package `exports` don't expose
-    `app/tests/fixtures/*`, so the web convert route can't `registerMockFixture` the goldens —
-    either add a fixtures export or accept heuristic-only web mock mode (decide at Phase 6 wiring,
-    don't discover it).
+12. `BACK-012` — ~~Decide golden-fixture access for web mock mode~~ **DECIDED at Phase 6 wiring
+    (2026-07-14):** heuristic-only web mock mode accepted — no fixtures export from the package;
+    `mockExtract`'s heuristic fallback is deterministic and always schema-valid, sufficient for
+    web mock/e2e. Decision recorded in a code comment in
+    `web/src/app/api/collab/convert/route.ts`.
+
+Phase 6 review round (added 2026-07-14, from the Opus review of ROOM-001..005 — none blocked the gate):
+13. `BACK-013` — `VisualTabs` initial tab is always "brief"; for a degenerate artifact whose planner
+    omitted `decisionBrief` the default tab renders an empty editor. Default to the first enabled tab.
+14. `BACK-014` — The 3s poll never clears `semanticArtifact`/`visualPlan` back to `undefined`
+    (guarded by `!== undefined`), asymmetric with `loadDocumentState`. Only matters if an artifact
+    is removed server-side while the doc stays active.
+15. `BACK-015` — Per-tab `key={activeTab}` remount of `SemanticArtifactEditor` recreates
+    ProseMirror (+xyflow on Map) on each tab switch. Correct but a perf cost; consider keep-alive
+    if tab-switching feels sluggish on large rooms.
+16. `BACK-016` — Remaining dark/glass chrome inside the room: convert/create/sandbox modals, tour
+    toast, and the reused `CommentSidebar` rail. Allowed under C1's Phase-10 deferral (untouched
+    legacy components), but they are now the only non-light chrome in the decision room — fold into
+    the Phase 10 launch-polish re-theme (rail itself is redesigned in Phase 7).
+17. `BACK-017` — Pre-existing: a fresh account's client defaults `activeDocumentId` to `doc-1`, so
+    the 3s poll 403s against the legacy demo doc until the user opens one of their own documents.
+    Harmless but noisy in server logs; consider deferring polling until a doc the user can read is
+    active.

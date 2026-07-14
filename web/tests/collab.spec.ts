@@ -218,7 +218,12 @@ test.describe.skip("HTMLCollab Dashboard - E2E Polish", () => {
     // Click Convert submit
     await page.click('[data-testid="convert-submit-btn"]');
 
-    // Verify it was processed by the mock AI (our mock wraps it in #mock-ai-refinement)
+    // Phase 6: refined docs carry a semanticArtifact (mock heuristic extraction),
+    // so the new doc opens as a DECISION ROOM on the Brief tab. The refined HTML
+    // (#mock-ai-refinement) now lives in the Source tab's legacy surface.
+    const briefTab = page.locator('[data-testid="decision-room-tab-brief"]');
+    await expect(briefTab).toBeVisible({ timeout: 5000 });
+    await page.click('[data-testid="decision-room-tab-source"]');
     const mockWrap = page.locator('#mock-ai-refinement');
     await expect(mockWrap).toBeVisible({ timeout: 5000 });
   });

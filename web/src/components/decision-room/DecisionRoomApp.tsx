@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  Lock, CheckCircle2, AlertTriangle, HelpCircle, MessageSquare, 
-  Sparkles, Check, X, LogOut, ChevronRight, User, ThumbsUp, XOctagon,
-  CornerDownRight, Calendar, UserCheck, Plus, Eye, CheckSquare, List, Send, FileText
+import {
+  Lock, CheckCircle2, AlertTriangle, MessageSquare,
+  Sparkles, Check, X, ChevronRight, User, ThumbsUp, XOctagon,
+  CornerDownRight, Calendar, Eye, CheckSquare, List, Send, FileText
 } from "lucide-react";
 import { diff_match_patch } from "diff-match-patch";
 import { useSession, signOut } from "next-auth/react";
@@ -17,12 +17,19 @@ import {
   type Comment,
   type Reply
 } from "htmlcollab-app/collab";
+import type { SemanticArtifact } from "htmlcollab-app/semantic";
+import { planVisuals, type VisualPlan } from "htmlcollab-app/visual";
 import DocumentSurface, { type PendingSelection } from "../DocumentSurface";
 import AuthScreen from "../auth/AuthScreen";
 import Header from "../Header";
-import CommentSidebar from "../CommentSidebar";
-import WorkspaceSelector from "../WorkspaceSelector";
 import WorkspaceSettingsModal from "../WorkspaceSettingsModal";
+import DecisionRoomLayout from "./DecisionRoomLayout";
+import TopDecisionBar, { type DecisionVerdict } from "./TopDecisionBar";
+import WorkspaceNav from "./WorkspaceNav";
+import VisualTabs from "./VisualTabs";
+import ReviewRail from "./ReviewRail";
+import EmptyState from "./EmptyState";
+import "@/app/decision-room.css";
 
 // Token mapping has been moved to API server.
 const INITIAL_HTML = `
@@ -376,65 +383,6 @@ const INITIAL_HTML = `
 </div>
 `.trim();
 
-// Mock comment builder helper
-function createMockComment(
-  id: string,
-  author: string,
-  quote: string,
-  body: string,
-  sectionId: string,
-  feedbackType: "approve" | "flag" | "needs" | "question" | null
-): Comment {
-  return {
-    id,
-    versionId: "v1",
-    author,
-    body,
-    createdAt: Date.now(),
-    feedbackType,
-    lifecycle: "open",
-    anchorStatus: "anchored",
-    target: {
-      type: "text",
-      quote,
-      prefix: "",
-      suffix: ""
-    },
-    lastKnownContext: quote,
-    resolution: null,
-    replies: [],
-    mentions: [],
-    history: [{ event: "created", who: author, when: Date.now() }]
-  };
-}
-
-const SEED_COMMENTS = [
-  createMockComment(
-    "c1",
-    "Priya",
-    "three separate analytics vendors",
-    "Is the reliance on three separate analytics vendors backed by baseline data or is it a projection? @nirat needs-data",
-    "background",
-    "needs"
-  ),
-  createMockComment(
-    "c2",
-    "Sam",
-    "Consolidate onto Vendor A",
-    "Highly ambitious target, let's make sure our sales pipeline is aligned.",
-    "actions",
-    "approve"
-  ),
-  createMockComment(
-    "c3",
-    "Alex",
-    "volume discount",
-    "We should specify volume discount standards explicitly. @sam",
-    "actions",
-    "flag"
-  )
-];
-
 interface TourStepConfig {
   targetId: string;
   title: string;
@@ -530,15 +478,26 @@ export default function DecisionRoomApp() {
   const [activeVersionNum, setActiveVersionNum] = useState(1);
 
   // Verdict states (Approve, Request Changes, Block)
-  const [verdicts, setVerdicts] = useState<Record<string, "approve" | "changes" | "block" | null>>({
-    "Sam": "approve",
-    "Alex": null,
-    "Priya": null,
-    "Nirat": null
-  });
+  const [verdicts, setVerdicts] = useState<Record<string, DecisionVerdict>>({});
+
+  // Semantic decision-room data (ROOM-002/003 wiring). Undefined for legacy
+  // docs (no semanticArtifact) — the router picks DocumentSurface in that
+  // case (brief §7.2 "Legacy remains reachable"). `visualPlan` is the
+  // persisted plan when the server stored one; otherwise it is computed
+  // client-side from `semanticArtifact` below.
+  const [semanticArtifact, setSemanticArtifact] = useState<SemanticArtifact | undefined>(undefined);
+  const [visualPlan, setVisualPlan] = useState<VisualPlan | undefined>(undefined);
+
+  const effectivePlan = React.useMemo<VisualPlan | undefined>(() => {
+    if (!semanticArtifact) return undefined;
+    return visualPlan ?? planVisuals(semanticArtifact);
+  }, [semanticArtifact, visualPlan]);
 
   // Comments, replies, notifications state
-  const [comments, setComments] = useState<Comment[]>(SEED_COMMENTS);
+  // ROOM-005: new/legacy documents start unseeded on the client — the server
+  // supplies seeds for legacy demo docs (INITIAL_STATE in
+  // web/src/app/api/collab/route.ts); the client no longer hard-codes any.
+  const [comments, setComments] = useState<Comment[]>([]);
   const [activeTab, setActiveTab] = useState<"threads" | "decisions" | "actions">("threads");
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
 
@@ -592,12 +551,18 @@ export default function DecisionRoomApp() {
     }
   }, [activeDocumentId]);
 
+  // True once the document list for the ACTIVE workspace has loaded at least
+  // once — gates the empty state so a workspace with docs never flashes
+  // "Import your first strategy memo." while the fetch is in flight.
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
+
   const fetchDocuments = async (workspaceId: string) => {
     try {
       const res = await fetch(`/api/collab/documents?workspaceId=${workspaceId}`);
       const data = await res.json();
       if (data.success && data.documents) {
         setDocuments(data.documents);
+        setDocumentsLoaded(true);
       }
     } catch (e) {
       console.error("Failed to fetch documents", e);
@@ -627,6 +592,12 @@ export default function DecisionRoomApp() {
       if (data.comments) setComments(data.comments);
       if (data.verdicts) setVerdicts(data.verdicts);
       if (data.lockedSections) setLockedSections(data.lockedSections);
+      // Always set (not gated by truthiness): switching from a semantic doc to
+      // a legacy doc (or vice versa) must clear/replace stale semantic state,
+      // otherwise the previous document's artifact would leak into the router
+      // decision for the newly-active document.
+      setSemanticArtifact(data.semanticArtifact ?? undefined);
+      setVisualPlan(data.visualPlan ?? undefined);
       setSandboxSectionId(null);
       setSandboxSimulatedHtml(null);
       setSandboxDiffHtml(null);
@@ -653,6 +624,7 @@ export default function DecisionRoomApp() {
       fetchWorkspaces();
     }
     if (authToken && activeWorkspaceId) {
+      setDocumentsLoaded(false);
       fetchDocuments(activeWorkspaceId);
     }
   }, [authToken, activeWorkspaceId]);
@@ -682,6 +654,8 @@ export default function DecisionRoomApp() {
     if (!newDocName.trim() || !newDocHtml.trim()) return;
     setNewDocError("");
     let targetHtml = newDocHtml;
+    let createdSemanticArtifact: SemanticArtifact | undefined;
+    let createdVisualPlan: VisualPlan | undefined;
     try {
       if (createHtmlOption === "refine") {
         setNewDocError("Refining document with AI... please wait.");
@@ -700,6 +674,8 @@ export default function DecisionRoomApp() {
           return;
         }
         targetHtml = convertData.html;
+        createdSemanticArtifact = convertData.semanticArtifact;
+        createdVisualPlan = convertData.visualPlan;
         setNewDocError("");
       }
 
@@ -711,7 +687,9 @@ export default function DecisionRoomApp() {
         body: JSON.stringify({
           name: newDocName,
           html: targetHtml,
-          workspaceId: activeWorkspaceId
+          workspaceId: activeWorkspaceId,
+          ...(createdSemanticArtifact ? { semanticArtifact: createdSemanticArtifact } : {}),
+          ...(createdVisualPlan ? { visualPlan: createdVisualPlan } : {})
         })
       });
       const data = await res.json();
@@ -737,7 +715,13 @@ export default function DecisionRoomApp() {
     try {
       let returnedHtml = "";
       let defaultDocName = "";
-      
+      // ROOM-002/003 wiring: forward whatever the convert route attached
+      // (semantic extraction fails independently of HTML conversion — brief
+      // §3.3 — so these stay undefined for the "as is" paths and for any doc
+      // where semantic extraction itself failed server-side).
+      let returnedSemanticArtifact: SemanticArtifact | undefined;
+      let returnedVisualPlan: VisualPlan | undefined;
+
       const isHtmlFile = docxFile && (docxFile.name.toLowerCase().endsWith(".html") || docxFile.name.toLowerCase().endsWith(".htm"));
 
       if (convertOption === "docx") {
@@ -746,9 +730,9 @@ export default function DecisionRoomApp() {
           setIsConverting(false);
           return;
         }
-        
+
         defaultDocName = docxFile.name.replace(/\.(docx|md|html|htm)$/i, "");
-        
+
         if (isHtmlFile && convertHtmlOption === "asis") {
           // Read HTML directly on client
           returnedHtml = await docxFile.text();
@@ -767,6 +751,8 @@ export default function DecisionRoomApp() {
             return;
           }
           returnedHtml = result.html;
+          returnedSemanticArtifact = result.semanticArtifact;
+          returnedVisualPlan = result.visualPlan;
         }
       } else {
         if (!pasteHtml.trim()) {
@@ -774,9 +760,9 @@ export default function DecisionRoomApp() {
           setIsConverting(false);
           return;
         }
-        
+
         defaultDocName = `Pasted Doc (${new Date().toLocaleDateString()})`;
-        
+
         if (convertHtmlOption === "asis") {
           returnedHtml = pasteHtml;
         } else {
@@ -796,6 +782,8 @@ export default function DecisionRoomApp() {
             return;
           }
           returnedHtml = result.html;
+          returnedSemanticArtifact = result.semanticArtifact;
+          returnedVisualPlan = result.visualPlan;
         }
       }
 
@@ -819,7 +807,9 @@ export default function DecisionRoomApp() {
         body: JSON.stringify({
           name: docName,
           html: returnedHtml,
-          workspaceId: activeWorkspaceId
+          workspaceId: activeWorkspaceId,
+          ...(returnedSemanticArtifact ? { semanticArtifact: returnedSemanticArtifact } : {}),
+          ...(returnedVisualPlan ? { visualPlan: returnedVisualPlan } : {})
         }),
       });
 
@@ -886,10 +876,10 @@ export default function DecisionRoomApp() {
   // Latest mutable values are read through a ref so the interval doesn't need to
   // be torn down and recreated on every state change (which previously caused a
   // near-constant re-subscribe + re-render storm).
-  const pollSnapshotRef = useRef({ documentVersions, activeVersionNum, comments, verdicts });
+  const pollSnapshotRef = useRef({ documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan });
   useEffect(() => {
-    pollSnapshotRef.current = { documentVersions, activeVersionNum, comments, verdicts };
-  }, [documentVersions, activeVersionNum, comments, verdicts]);
+    pollSnapshotRef.current = { documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan };
+  }, [documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan]);
 
   const pollPausedRef = useRef(false);
   useEffect(() => {
@@ -921,6 +911,18 @@ export default function DecisionRoomApp() {
           if (data.verdicts && JSON.stringify(data.verdicts) !== JSON.stringify(snap.verdicts)) {
             setVerdicts(data.verdicts);
           }
+          if (
+            data.semanticArtifact !== undefined &&
+            JSON.stringify(data.semanticArtifact) !== JSON.stringify(snap.semanticArtifact)
+          ) {
+            setSemanticArtifact(data.semanticArtifact);
+          }
+          if (
+            data.visualPlan !== undefined &&
+            JSON.stringify(data.visualPlan) !== JSON.stringify(snap.visualPlan)
+          ) {
+            setVisualPlan(data.visualPlan);
+          }
         })
         .catch((err) => {
           console.error("Error polling state from server", err);
@@ -935,6 +937,19 @@ export default function DecisionRoomApp() {
 
   const handleLogout = () => {
     signOut({ redirect: false });
+  };
+
+  // Selecting a document from WorkspaceNav also closes the mobile/overlay nav
+  // drawer (same behavior as the pre-decomposition inline onClick).
+  const handleSelectDocument = (docId: string) => {
+    setActiveDocumentId(docId);
+    setIsSidebarOpen(false);
+  };
+
+  const handleRestartTour = () => {
+    startTour();
+    setIsSidebarOpen(true);
+    localStorage.removeItem("onboarding_tour_completed");
   };
 
 
@@ -1419,299 +1434,168 @@ export default function DecisionRoomApp() {
   }
 
   // 2. Collaborative Review Dashboard
-  return (
-    <div className="pane-layout-container font-sans text-slate-900">
-      
-      {/* Left Sidebar Overlay */}
-      <div 
-        className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity duration-300 ${isSidebarOpen || tourStep === 0 ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-        onClick={() => setIsSidebarOpen(false)}
-      />
-      {/* Left Sidebar */}
-      <aside
-        id="tour-sidebar"
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shadow-2xl transform transition-transform duration-300 ${
-          isSidebarOpen || tourStep === 0 ? "translate-x-0" : "-translate-x-full"
-        } ${
-          tourStep === 0 ? "ring-4 ring-indigo-500 ring-offset-2 ring-offset-slate-900 animate-pulse" : ""
-        }`}
-      >
-        {/* Workspace Title & Brand */}
-        <div className="p-4 border-b border-slate-800 flex items-center gap-2.5">
-          <div className="h-8 w-8 bg-gradient-to-tr from-indigo-500 to-indigo-400 rounded-lg flex items-center justify-center shadow-md">
-            <Sparkles className="h-4.5 w-4.5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-tight text-white leading-none">Viscollab</h1>
-            <span className="text-[10px] text-slate-400 font-medium font-mono">WORKSPACE</span>
-          </div>
-        </div>
+  // ROOM-002/003/004: the inline three-pane JSX + the old "Alignment Sign-off
+  // Verdicts" banner are REPLACED by a DecisionRoomLayout composition (brief
+  // §7.2). This is decomposition, not redesign — every handler/prop below is
+  // unchanged from the pre-decomposition version; only the JSX shell moved
+  // into presentational sub-components.
 
-        {/* Workspace Selector */}
-        <div className="p-3 border-b border-slate-800">
-          <WorkspaceSelector 
-            activeWorkspaceId={activeWorkspaceId} 
-            onSelectWorkspace={setActiveWorkspaceId}
-            onOpenSettings={() => setIsWorkspaceSettingsOpen(true)}
-          />
-        </div>
-
-        {/* Search Documents */}
-        <div className="p-3 border-b border-slate-800">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search documents..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700/60 rounded-lg px-2.5 py-1.5 pl-8 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <div className="absolute left-2.5 top-2 text-slate-500">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        {/* Document list */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            <span>Documents</span>
-            {canCreateDocInWorkspace && (
-              <button
-                onClick={() => setIsConvertModalOpen(true)}
-                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
-                title="Convert Document"
-                data-testid="create-new-doc-btn"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          
-          <div className="space-y-0.5">
-            {documents
-              .filter((doc) => doc.name.toLowerCase().includes(searchTerm.toLowerCase()))
-              .map((doc) => {
-                const isActive = doc.id === activeDocumentId;
-                return (
-                  <button
-                    key={doc.id}
-                    onClick={() => {
-                      setActiveDocumentId(doc.id);
-                      setIsSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-xs font-semibold transition-all cursor-pointer ${
-                      isActive
-                        ? "bg-indigo-600 text-white font-bold"
-                        : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
-                    }`}
-                  >
-                    <FileText className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400"}`} />
-                    <span className="truncate flex-1">{doc.name}</span>
-                  </button>
-                );
-              })}
-            {documents.filter((doc) => doc.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-              <p className="text-[11px] text-slate-500 text-center py-4 font-medium italic">No documents found</p>
-            )}
-          </div>
-        </div>
-
-        {/* User Profile Info & Tour Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/40 space-y-2.5">
-          {currentUser && (
-            <div className="flex items-center gap-2 px-1">
-              <div className="h-7 w-7 rounded-full bg-slate-800 text-indigo-400 flex items-center justify-center text-xs font-bold uppercase border border-slate-700">
-                {currentUser.name[0]}
-              </div>
-              <div className="text-left leading-tight flex-1 min-w-0">
-                <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
-                <p className="text-[10px] font-medium text-slate-400 capitalize">{currentUser.role}</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Log Out"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Replay tour and metadata */}
-          <div className="flex items-center justify-between border-t border-slate-800/80 pt-2 text-[10px] text-slate-500 font-semibold">
-            <button
-              onClick={() => { startTour(); setIsSidebarOpen(true); localStorage.removeItem("onboarding_tour_completed"); }}
-              className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer py-1 px-1.5 rounded hover:bg-slate-800"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-              <span>Restart Tour</span>
-            </button>
-            <span className="font-mono opacity-80">v1.2.0</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Workspace Frame */}
-      <div className="pane-workspace-frame">        {/* Premium Header */}
-        <Header
-          setIsSidebarOpen={setIsSidebarOpen}
-          documents={documents}
-          activeDocumentId={activeDocumentId}
-          documentVersions={documentVersions}
-          activeVersionNum={activeVersionNum}
-          setActiveVersionNum={setActiveVersionNum}
-          currentUser={activeDocumentUser}
-          setIsConvertModalOpen={setIsConvertModalOpen}
-          isCommentsOpen={isCommentsOpen}
-          setIsCommentsOpen={setIsCommentsOpen}
-          handleLogout={handleLogout}
-          activeWorkspaceId={activeWorkspaceId}
+  const legacyDocumentSurface = (
+    <div ref={previewContainerRef} className="pane-preview-body">
+      {currentVersion.html.includes("id=") ? (
+        <DocumentSurface
+          docId={activeDocumentId}
+          versionNumber={activeVersionNum}
+          html={currentVersion.html}
+          isDraft={currentVersion.status === "Draft"}
+          comments={comments}
+          sectionsMetadata={sectionsMetadata}
+          sectionIds={sectionIds}
+          selectedCommentId={selectedCommentId}
+          canEdit={canEdit(activeDocumentRole)}
+          canComment={canComment(activeDocumentRole)}
+          previewContainerRef={previewContainerRef}
+          onSelectComment={handleSelectComment}
+          onOpenAiEdit={handleOpenAiEdit}
+          onCommentSection={handleCommentSection}
+          onCommentSelection={handleCommentSelection}
+          lockedSections={lockedSections}
+          onToggleLock={handleToggleSectionLock}
         />
+      ) : (
+        <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
+      )}
+    </div>
+  );
 
-      {/* Main Container */}
-      <div className={`pane-main-content transition-all ${isCommentsOpen ? "" : "max-w-5xl"}`}>
-        
-        {/* Left Hand Document Column */}
-        <div className="pane-center-preview">
-          
-          {/* North-star Alignment Banner */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-slate-900 font-display flex items-center gap-1.5">
-                <UserCheck className="h-4 w-4 text-indigo-600" />
-                Alignment Sign-off Verdicts
-              </h3>
-              <p className="text-xs text-slate-500 font-sans">
-                The consensus gauge for final implementation sign-off.
-              </p>
-            </div>
+  // Small canvas-frame topline (filename, Draft/Live badge, "Create New
+  // Draft") — unchanged behavior from the pre-decomposition "Document Content
+  // Box" header, just restyled with the --dr-* tokens.
+  const canvasTopline = (
+    <div className="dr-canvas-topline">
+      <div className="dr-canvas-topline-left">
+        <FileText className="dr-canvas-topline-icon" />
+        <span className="dr-canvas-topline-name">
+          {documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview"}
+        </span>
+        <span
+          className={`dr-canvas-status-badge ${
+            currentVersion.status === "Live" ? "dr-canvas-status-live" : "dr-canvas-status-draft"
+          }`}
+        >
+          {currentVersion.status}
+        </span>
+      </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {Object.entries(verdicts).map(([user, verdict]) => (
-                <div 
-                  key={user} 
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold ${
-                    verdict === "approve" ? "bg-emerald-50 border-emerald-200 text-emerald-800" :
-                    verdict === "changes" ? "bg-amber-50 border-amber-200 text-amber-800" :
-                    verdict === "block" ? "bg-rose-50 border-rose-200 text-rose-800" :
-                    "bg-slate-50 border-slate-200 text-slate-500"
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                  {user}: {verdict === "approve" ? "Approved" : verdict === "changes" ? "Request Changes" : verdict === "block" ? "Blocked" : "Pending"}
-                </div>
-              ))}
-            </div>
+      {canEdit(activeDocumentRole) && currentVersion.status !== "Draft" && (
+        <button onClick={handleCreateNewDraft} className="dr-canvas-topline-btn">
+          Create New Draft
+        </button>
+      )}
+    </div>
+  );
 
-            <div className="border-t md:border-t-0 md:border-l border-slate-200 pt-3 md:pt-0 md:pl-4 flex flex-col gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Your Verdict:</span>
-              <select
-                value={verdicts[currentUser.name] || ""}
-                onChange={(e) => handleVerdictChange(e.target.value as any || null)}
-                data-testid="verdict-select"
-                className="text-xs font-bold border border-slate-200 rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-slate-50 cursor-pointer"
-              >
-                <option value="">Pending...</option>
-                <option value="approve">🟢 Approve</option>
-                <option value="changes">🟡 Request Changes</option>
-                <option value="block">🔴 Block</option>
-              </select>
-            </div>
-          </div>
+  // Router: semanticArtifact present -> decision room (VisualTabs); absent ->
+  // legacy DocumentSurface is the whole canvas (brief §7.2 "Legacy remains
+  // reachable"). EmptyState wins over both when the active workspace has zero
+  // documents.
+  const workspaceHasNoDocuments =
+    Boolean(activeWorkspaceId) && documentsLoaded && documents.length === 0;
 
-          {/* Document Content Box */}
-          <div 
-            id="tour-center-preview"
-            className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm flex-1 flex flex-col overflow-hidden transition-all ${
-              tourStep === 1 ? "ring-4 ring-indigo-500 ring-offset-2 z-50" : ""
-            }`}
-          >
-            <div className="bg-slate-50 border-b border-slate-200 px-3 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
-                <span className="text-sm font-bold text-slate-800 font-display truncate">
-                  {documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview"}
-                </span>
-                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  currentVersion.status === "Live" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
-                }`}>
-                  {currentVersion.status}
-                </span>
-              </div>
+  const canvasContent = workspaceHasNoDocuments ? (
+    <EmptyState onImport={() => setIsConvertModalOpen(true)} />
+  ) : (
+    <div className="dr-canvas-frame">
+      {canvasTopline}
+      {semanticArtifact && effectivePlan ? (
+        <VisualTabs artifact={semanticArtifact} plan={effectivePlan} sourceContent={legacyDocumentSurface} />
+      ) : (
+        legacyDocumentSurface
+      )}
+    </div>
+  );
 
-              {canEdit(activeDocumentRole) && currentVersion.status !== "Draft" && (
-                <div>
-                  <button
-                    onClick={handleCreateNewDraft}
-                    className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl transition-colors shadow-sm cursor-pointer"
-                  >
-                    Create New Draft
-                  </button>
-                </div>
-              )}
-            </div>
+  const topBarContent = (
+    <>
+      <Header
+        setIsSidebarOpen={setIsSidebarOpen}
+        documents={documents}
+        activeDocumentId={activeDocumentId}
+        documentVersions={documentVersions}
+        activeVersionNum={activeVersionNum}
+        setActiveVersionNum={setActiveVersionNum}
+        currentUser={activeDocumentUser}
+        setIsConvertModalOpen={setIsConvertModalOpen}
+        isCommentsOpen={isCommentsOpen}
+        setIsCommentsOpen={setIsCommentsOpen}
+        handleLogout={handleLogout}
+        activeWorkspaceId={activeWorkspaceId}
+      />
+      <TopDecisionBar
+        title={semanticArtifact ? semanticArtifact.title : (documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview")}
+        bluf={semanticArtifact?.bluf}
+        verdicts={verdicts}
+        currentUserName={currentUser.name}
+        onVerdictChange={handleVerdictChange}
+      />
+    </>
+  );
 
-            {/* Document Review Body */}
-            <div
-              ref={previewContainerRef}
-              className="pane-preview-body"
-            >
-              {currentVersion.html.includes("id=") ? (
-                <DocumentSurface
-                  docId={activeDocumentId}
-                  versionNumber={activeVersionNum}
-                  html={currentVersion.html}
-                  isDraft={currentVersion.status === "Draft"}
-                  comments={comments}
-                  sectionsMetadata={sectionsMetadata}
-                  sectionIds={sectionIds}
-                  selectedCommentId={selectedCommentId}
-                  canEdit={canEdit(activeDocumentRole)}
-                  canComment={canComment(activeDocumentRole)}
-                  previewContainerRef={previewContainerRef}
-                  onSelectComment={handleSelectComment}
-                  onOpenAiEdit={handleOpenAiEdit}
-                  onCommentSection={handleCommentSection}
-                  onCommentSelection={handleCommentSelection}
-                  lockedSections={lockedSections}
-                  onToggleLock={handleToggleSectionLock}
-                />
-              ) : (
-                <div className="text-slate-500 text-sm">Document HTML format incorrect.</div>
-              )}
+  const navContent = (
+    <WorkspaceNav
+      activeWorkspaceId={activeWorkspaceId}
+      onSelectWorkspace={setActiveWorkspaceId}
+      onOpenWorkspaceSettings={() => setIsWorkspaceSettingsOpen(true)}
+      searchTerm={searchTerm}
+      onSearchTermChange={setSearchTerm}
+      documents={documents}
+      activeDocumentId={activeDocumentId}
+      onSelectDocument={handleSelectDocument}
+      canCreateDoc={canCreateDocInWorkspace}
+      onOpenConvertModal={() => setIsConvertModalOpen(true)}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onRestartTour={handleRestartTour}
+    />
+  );
 
-            </div>
-          </div>
-        </div>
+  const reviewRailContent = isCommentsOpen ? (
+    <ReviewRail
+      tourStep={tourStep}
+      isAddingComment={isAddingComment}
+      setIsAddingComment={setIsAddingComment}
+      selectedText={selectedText}
+      handleAddComment={handleAddComment}
+      commentText={commentText}
+      setCommentText={setCommentText}
+      commentFeedbackType={commentFeedbackType}
+      setCommentFeedbackType={setCommentFeedbackType}
+      comments={comments}
+      selectedCommentId={selectedCommentId}
+      setSelectedCommentId={setSelectedCommentId}
+      replyDrafts={replyDrafts}
+      setReplyDrafts={setReplyDrafts}
+      handleAddReply={handleAddReply}
+      currentUser={activeDocumentUser}
+      handleResolveComment={handleResolveComment}
+    />
+  ) : null;
 
-        {/* Right Hand Sidebar Column */}        {isCommentsOpen && (
-          <CommentSidebar
-            tourStep={tourStep}
-            isAddingComment={isAddingComment}
-            setIsAddingComment={setIsAddingComment}
-            selectedText={selectedText}
-            handleAddComment={handleAddComment}
-            commentText={commentText}
-            setCommentText={setCommentText}
-            commentFeedbackType={commentFeedbackType}
-            setCommentFeedbackType={setCommentFeedbackType}
-            comments={comments}
-            selectedCommentId={selectedCommentId}
-            setSelectedCommentId={setSelectedCommentId}
-            replyDrafts={replyDrafts}
-            setReplyDrafts={setReplyDrafts}
-            handleAddReply={handleAddReply}
-            currentUser={activeDocumentUser}
-            handleResolveComment={handleResolveComment}
-          />
-        )}
-      </div> {/* Closing pane-main-content */}
+  return (
+    <>
+      <DecisionRoomLayout
+        topBar={topBarContent}
+        nav={navContent}
+        canvas={canvasContent}
+        reviewRail={reviewRailContent}
+        isCommentsOpen={isCommentsOpen}
+        isSidebarOpen={isSidebarOpen}
+        onCloseSidebar={() => setIsSidebarOpen(false)}
+        tourNavActive={tourStep === 0}
+        tourCanvasActive={tourStep === 1}
+      />
 
-      <WorkspaceSettingsModal 
+      <WorkspaceSettingsModal
         isOpen={isWorkspaceSettingsOpen}
         onClose={() => setIsWorkspaceSettingsOpen(false)}
         workspaceId={activeWorkspaceId}
@@ -2297,7 +2181,6 @@ export default function DecisionRoomApp() {
           </div>
         </div>
       )}
-      </div> {/* Closing Main Workspace Frame */}
-    </div>
+    </>
   );
 }

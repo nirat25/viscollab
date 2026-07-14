@@ -24,7 +24,12 @@ export { BLOCK_TITLES, planVisuals } from "./plan.js";
 export type { VisualPlanResult } from "./validate.js";
 export { validateVisualPlan } from "./validate.js";
 
-export type { TipTapVisualBlockNode, TipTapVisualDoc, VisualTipTapNodeName } from "./project.js";
+export type {
+  ProjectArtifactOptions,
+  TipTapVisualBlockNode,
+  TipTapVisualDoc,
+  VisualTipTapNodeName,
+} from "./project.js";
 export {
   SOURCE_EXCERPT_BLOCK_ID,
   VISUAL_TIPTAP_NODE_NAMES,

@@ -64,15 +64,25 @@ function primaryNodeIdFor(block: VisualBlock): string | null {
   }
 }
 
+export interface ProjectArtifactOptions {
+  /** Append the trailing sourceExcerptBlock (default true). Phase 6 per-tab
+   *  views pass false — the Source tab renders the legacy HTML surface, so a
+   *  trailing excerpt card on every other tab would be noise. */
+  includeSourceExcerpt?: boolean;
+}
+
 /**
  * Project artifact + plan into the decision-room TipTap document (plain JSON).
  * Deterministic; one custom node per plan block in plan order (openQuestions
- * skipped — rendered inline), plus one trailing sourceExcerptBlock.
+ * skipped — rendered inline), plus one trailing sourceExcerptBlock unless
+ * `includeSourceExcerpt` is false.
  */
 export function projectArtifact(
   artifact: SemanticArtifact,
-  plan: VisualPlan
+  plan: VisualPlan,
+  options: ProjectArtifactOptions = {}
 ): TipTapVisualDoc {
+  const { includeSourceExcerpt = true } = options;
   const content: TipTapVisualBlockNode[] = [];
 
   for (const block of plan.blocks) {
@@ -87,14 +97,16 @@ export function projectArtifact(
     });
   }
 
-  content.push({
-    type: VISUAL_TIPTAP_NODE_NAMES.sourceExcerpt,
-    attrs: {
-      blockId: SOURCE_EXCERPT_BLOCK_ID,
-      blockKind: "sourceExcerpt",
-      primaryNodeId: artifact.primaryDecisionId ?? null,
-    },
-  });
+  if (includeSourceExcerpt) {
+    content.push({
+      type: VISUAL_TIPTAP_NODE_NAMES.sourceExcerpt,
+      attrs: {
+        blockId: SOURCE_EXCERPT_BLOCK_ID,
+        blockKind: "sourceExcerpt",
+        primaryNodeId: artifact.primaryDecisionId ?? null,
+      },
+    });
+  }
 
   return { type: "doc", content };
 }

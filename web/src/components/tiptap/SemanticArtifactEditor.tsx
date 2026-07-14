@@ -32,6 +32,9 @@ const canvasStyle: CSSProperties = {
 export interface SemanticArtifactEditorProps {
   artifact: SemanticArtifact;
   plan: VisualPlan;
+  /** Append the trailing sourceExcerptBlock (default true). Phase 6 tab views
+   *  pass false — their Source tab renders the legacy HTML surface instead. */
+  includeSourceExcerpt?: boolean;
   /** Optional dev/debug footer (e.g. round-trip probe). Client-only. */
   renderFooter?: (editor: Editor | null) => ReactNode;
 }
@@ -39,6 +42,7 @@ export interface SemanticArtifactEditorProps {
 export default function SemanticArtifactEditor({
   artifact,
   plan,
+  includeSourceExcerpt = true,
   renderFooter,
 }: SemanticArtifactEditorProps) {
   "use no memo";
@@ -49,7 +53,10 @@ export default function SemanticArtifactEditor({
   // compiler memoization can serve a stale editor once anything reads editor
   // state reactively (Phase 5/6 interactivity — brief risk R1). Opting out here
   // is strictly more conservative (plain React) and future-proofs that work.
-  const doc = useMemo(() => projectArtifact(artifact, plan), [artifact, plan]);
+  const doc = useMemo(
+    () => projectArtifact(artifact, plan, { includeSourceExcerpt }),
+    [artifact, plan, includeSourceExcerpt]
+  );
 
   const editor = useEditor(
     {

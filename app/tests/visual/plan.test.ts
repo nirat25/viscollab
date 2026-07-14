@@ -195,6 +195,13 @@ describe("projectArtifact — TipTap projection (§7.1)", () => {
     const planned = plan.blocks.filter((b) => b.kind !== "openQuestions").map((b) => b.id);
     expect(doc.content.slice(0, -1).map((n) => n.attrs.blockId)).toEqual(planned);
   });
+
+  it("omits the trailing sourceExcerptBlock when includeSourceExcerpt is false (Phase 6 tabs)", () => {
+    const noExcerpt = projectArtifact(founder, plan, { includeSourceExcerpt: false });
+    const planned = plan.blocks.filter((b) => b.kind !== "openQuestions").map((b) => b.id);
+    expect(noExcerpt.content.map((n) => n.attrs.blockId)).toEqual(planned);
+    expect(noExcerpt.content.some((n) => n.attrs.blockKind === "sourceExcerpt")).toBe(false);
+  });
 });
 
 describe("cellValue checks both relationship directions (review SF#3)", () => {

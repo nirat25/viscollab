@@ -1471,6 +1471,10 @@ export default function DecisionRoomApp() {
   // the React render path (brief §6.2) — see useCommentLinks.ts.
   useCommentLinks({
     rootRef: roomRootRef,
+    // The layout (and thus roomRootRef.current) exists only past the mounted +
+    // auth gates below; the hook's binding effects re-run when this flips
+    // (Opus review B1 — a bare ref object never re-triggers an effect).
+    enabled: mounted && !!authToken && !!currentUser,
     comments,
     artifact: semanticArtifact,
     onSelectComment: handleSelectComment,

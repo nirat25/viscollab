@@ -33,6 +33,13 @@ export interface UseCommentLinksArgs {
   /** Root DOM node wrapping BOTH the canvas pane and the review rail — a card
    *  hover must be able to light a canvas node and vice versa (brief §6.2). */
   rootRef: RefObject<HTMLElement | null>;
+  /** True once the room layout is actually rendered (DecisionRoomApp's
+   *  mounted+auth gates passed). The binding effects re-run when this flips:
+   *  on the very first render the layout — and therefore `rootRef.current` —
+   *  does not exist yet, and a ref object alone can never re-trigger an
+   *  effect (Opus review B1: without this the listeners bound once against a
+   *  null root and hover/click linking was dead in the running app). */
+  enabled: boolean;
   comments: Comment[];
   /** The live artifact — resolves a clicked node's kind/label snapshot and
    *  confirms the node exists. Undefined for legacy docs (no semantic
@@ -81,6 +88,7 @@ function resolveHoverNodeId(target: Element): string | null {
  */
 export function useCommentLinks({
   rootRef,
+  enabled,
   comments,
   artifact,
   onSelectComment,
@@ -97,10 +105,12 @@ export function useCommentLinks({
     onStartCommentRef.current = onStartComment;
   }, [comments, artifact, onSelectComment, onStartComment]);
 
-  // Delegated mouseover/mouseout/click — bound ONCE on mount, cleaned up on
-  // unmount only. Deliberately no deps beyond `rootRef` (a stable ref object)
-  // so re-renders never rebind these listeners.
+  // Delegated mouseover/mouseout/click — bound once the room is rendered
+  // (`enabled` flips false→true exactly once per session), cleaned up on
+  // unmount/disable. No other deps: volatile values are ref-read, so
+  // re-renders never rebind these listeners.
   useEffect(() => {
+    if (!enabled) return;
     const root = rootRef.current;
     if (!root) return;
 
@@ -162,7 +172,7 @@ export function useCommentLinks({
       root.removeEventListener("click", handleClick);
       root.querySelectorAll(".dr-link-active").forEach((el) => el.classList.remove("dr-link-active"));
     };
-  }, [rootRef]);
+  }, [rootRef, enabled]);
 
   // Badge stamping (requirement 7): data-comment-count = count of OPEN
   // semantic-target comments per node id. Re-runs on comment/artifact change
@@ -171,10 +181,14 @@ export function useCommentLinks({
   // so a MutationObserver keeps a freshly-mounted tab's nodes stamped instead
   // of leaving them bare until the next comment edit.
   useEffect(() => {
+    if (!enabled) return;
     const root = rootRef.current;
     if (!root) return;
 
     const stamp = () => {
+      // Legacy docs have no semantic artifact and therefore no semantic nodes
+      // to stamp — skip the full-tree query on their (frequent) DOM mutations.
+      if (!artifactRef.current) return;
       const counts = new Map<string, number>();
       for (const c of commentsRef.current) {
         if (c.lifecycle !== "open") continue;
@@ -196,5 +210,5 @@ export function useCommentLinks({
       observer.disconnect();
       root.querySelectorAll("[data-comment-count]").forEach((el) => el.removeAttribute("data-comment-count"));
     };
-  }, [rootRef, comments, artifact]);
+  }, [rootRef, enabled, comments, artifact]);
 }

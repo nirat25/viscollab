@@ -394,3 +394,11 @@ Phase 6 review round (added 2026-07-14, from the Opus review of ROOM-001..005 �
     the 3s poll 403s against the legacy demo doc until the user opens one of their own documents.
     Harmless but noisy in server logs; consider deferring polling until a doc the user can read is
     active.
+
+Phase 7 review round (added 2026-07-14, from the Opus review — none blocked the gate):
+18. `BACK-018` — Defense-in-depth: `handleAddComment`/`handleAddReply` don't re-check `canComment`
+    on submit (all composer-OPEN gestures are gated and the server enforces on the `comments` key;
+    pre-existing, unchanged by Phase 7). Add the submit-side check when touching these handlers.
+19. `BACK-019` — Comment-count badge positioning on `TradeoffMatrix` header cells: the generic
+    `[data-semantic-node-id]{position:relative}` + `::after` pill can sit oddly on `<th>` cells.
+    Cosmetic only; tune when polishing.

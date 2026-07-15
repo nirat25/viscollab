@@ -19,8 +19,12 @@ import {
   escapeHTML,
   parseMentions,
   handleAutocompleteSelect,
-  elHash
+  elHash,
+  resolveSemanticTarget,
+  type Comment,
+  type SemanticCommentTarget
 } from '../../src/collab/comments.js';
+import type { SemanticArtifact, SemanticNode, RiskNode } from '../../src/semantic/types.js';
 
 function createDoc(html: string) {
   const div = document.createElement('div');
@@ -358,5 +362,162 @@ describe('DOM-Anchored Commenting Anchoring (locate)', () => {
     const resFuzzy = locate(docEdited, c);
     expect(resFuzzy.status).toBe('stale');
     expect(resFuzzy.newText).toContain('overlapping analytics vendors. Merging onto Vendor A');
+  });
+});
+
+describe('Semantic comment targets (Phase 7, COLLAB-001)', () => {
+  beforeEach(() => {
+    resetState();
+  });
+
+  function makeRiskNode(id: string): RiskNode {
+    return {
+      id,
+      kind: 'risk',
+      title: 'Vendor lock-in',
+      summary: 'Consolidating onto one vendor increases switching cost.',
+      sourceRefs: [],
+      sourceStatus: 'explicit'
+    };
+  }
+
+  function makeArtifact(id: string, nodes: SemanticNode[]): Pick<SemanticArtifact, 'id' | 'nodes'> {
+    return { id, nodes };
+  }
+
+  it('resolves an anchored semantic target when the node exists in the live artifact', () => {
+    const artifact = makeArtifact('art1', [makeRiskNode('risk_1'), makeRiskNode('risk_2')]);
+    const target: SemanticCommentTarget = {
+      type: 'semantic',
+      artifactId: 'art1',
+      semanticNodeId: 'risk_2'
+    };
+
+    const res = resolveSemanticTarget(artifact, target);
+    expect(res.status).toBe('anchored');
+    expect(res.node?.id).toBe('risk_2');
+  });
+
+  it('resolves orphaned when the semantic node id is absent from the artifact', () => {
+    const artifact = makeArtifact('art1', [makeRiskNode('risk_1')]);
+    const target: SemanticCommentTarget = {
+      type: 'semantic',
+      artifactId: 'art1',
+      semanticNodeId: 'risk_99'
+    };
+
+    const res = resolveSemanticTarget(artifact, target);
+    expect(res.status).toBe('orphaned');
+    expect(res.node).toBeUndefined();
+  });
+
+  it('resolves orphaned when artifactId mismatches, regardless of node presence', () => {
+    const artifact = makeArtifact('art1', [makeRiskNode('risk_1')]);
+    const target: SemanticCommentTarget = {
+      type: 'semantic',
+      artifactId: 'art-other',
+      semanticNodeId: 'risk_1'
+    };
+
+    const res = resolveSemanticTarget(artifact, target);
+    expect(res.status).toBe('orphaned');
+    expect(res.node).toBeUndefined();
+  });
+
+  it('locate() returns orphaned for a semantic target without touching the DOM', () => {
+    const c: Comment = {
+      id: 'c1',
+      versionId: 'v1',
+      author: 'Alex',
+      body: 'Comment on a risk',
+      createdAt: Date.now(),
+      feedbackType: null,
+      lifecycle: 'open',
+      anchorStatus: 'anchored',
+      target: { type: 'semantic', artifactId: 'art1', semanticNodeId: 'risk_1' },
+      lastKnownContext: 'Risk R1',
+      resolution: null,
+      replies: [],
+      mentions: [],
+      history: []
+    };
+
+    // Passing null as root proves the guard returns before any DOM access.
+    const res = locate(null, c);
+    expect(res.status).toBe('orphaned');
+  });
+
+  it('resolveComment(id, changeLink, versionNumber) records resolvedInVersion and the vN history text', () => {
+    setCurrentUser('Alex');
+    const comment = addComment(
+      { type: 'text', quote: 'Vendor A', prefix: '', suffix: '' },
+      'A comment'
+    );
+
+    resolveComment(comment.id, { before: 'a', after: 'b' }, 3);
+
+    expect(comment.resolution?.resolvedInVersion).toBe(3);
+    expect(comment.resolution?.semanticNodeId).toBeUndefined();
+    const lastEvent = comment.history[comment.history.length - 1];
+    expect(lastEvent?.event).toBe('resolved (content edited) in v3');
+  });
+
+  it('resolveComment sets resolution.semanticNodeId for a semantic-target comment', () => {
+    setCurrentUser('Alex');
+    const comment = addComment(
+      { type: 'semantic', artifactId: 'art1', semanticNodeId: 'risk_2' },
+      'A comment on a risk'
+    );
+
+    resolveComment(comment.id, null, 5);
+
+    expect(comment.resolution?.resolvedInVersion).toBe(5);
+    expect(comment.resolution?.semanticNodeId).toBe('risk_2');
+    const lastEvent = comment.history[comment.history.length - 1];
+    expect(lastEvent?.event).toBe('resolved (no change) in v5');
+  });
+
+  it('resolveComment with no versionNumber leaves the pre-Phase-7 behavior unchanged', () => {
+    setCurrentUser('Alex');
+    const comment = addComment(
+      { type: 'text', quote: 'Vendor A', prefix: '', suffix: '' },
+      'A comment'
+    );
+
+    resolveComment(comment.id);
+
+    expect(comment.resolution?.resolvedInVersion).toBeUndefined();
+    const lastEvent = comment.history[comment.history.length - 1];
+    expect(lastEvent?.event).toBe('resolved (no change)');
+  });
+
+  it('round-trips a Comment carrying a SemanticCommentTarget through JSON with optional fields set', () => {
+    setCurrentUser('Alex');
+    const comment = addComment(
+      {
+        type: 'semantic',
+        artifactId: 'art1',
+        semanticNodeId: 'risk_2',
+        visualBlockId: 'block-3',
+        nodeKind: 'risk',
+        nodeLabel: 'R2'
+      },
+      'A comment on a risk'
+    );
+    resolveComment(comment.id, { before: 'a', after: 'b' }, 2);
+
+    const roundTripped = JSON.parse(JSON.stringify(comment));
+    expect(roundTripped).toEqual(comment);
+  });
+
+  it('round-trips a Comment carrying a SemanticCommentTarget through JSON with optional fields unset', () => {
+    setCurrentUser('Alex');
+    const comment = addComment(
+      { type: 'semantic', artifactId: 'art1', semanticNodeId: 'risk_2' },
+      'A comment on a risk'
+    );
+
+    const roundTripped = JSON.parse(JSON.stringify(comment));
+    expect(roundTripped).toEqual(comment);
   });
 });

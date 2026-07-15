@@ -1,4 +1,5 @@
 import { diff_match_patch } from 'diff-match-patch';
+import type { SemanticNodeId, SemanticNodeKind, SemanticArtifact, SemanticNode } from '../semantic/types.js';
 
 export interface TextTarget {
   type: 'text';
@@ -16,7 +17,20 @@ export interface ElementTarget {
   snippet: string;
 }
 
-export type AnchorTarget = TextTarget | ElementTarget;
+/** Semantic anchor — primary anchor for comments made on the decision-room canvas.
+ *  Keyed on the STABLE SemanticNodeId (app/src/semantic/types.ts). */
+export interface SemanticCommentTarget {
+  type: 'semantic';
+  artifactId: string;            // === SemanticArtifact.id (identity guard; re-import = new doc)
+  semanticNodeId: SemanticNodeId;
+  visualBlockId?: string;        // the VisualBlock the comment was made from, if any
+  /** Creation-time SNAPSHOT for rail grouping/display without a live artifact lookup.
+   *  Not kept in sync; live kind/label are re-resolved from the artifact when present. */
+  nodeKind?: SemanticNodeKind;
+  nodeLabel?: string;
+}
+
+export type AnchorTarget = TextTarget | ElementTarget | SemanticCommentTarget;
 
 export interface HistoryEvent {
   event: string;
@@ -39,6 +53,10 @@ export interface Resolution {
     before: string;
     after: string;
   } | null;
+  /** HTML version active at resolution — powers "Resolved with change in v3". */
+  resolvedInVersion?: number;
+  /** For semantic-target comments, the node the resolution pertains to (snapshot). */
+  semanticNodeId?: SemanticNodeId;
 }
 
 export interface Comment {
@@ -330,7 +348,21 @@ function matchMainSafe(dmp: any, text: string, pattern: string, expectedLoc: num
   return -1;
 }
 
+/** Resolve a semantic anchor against the live artifact. The semantic counterpart of locate(). */
+export function resolveSemanticTarget(
+  artifact: Pick<SemanticArtifact, 'id' | 'nodes'>,
+  target: SemanticCommentTarget
+): { status: 'anchored' | 'orphaned'; node?: SemanticNode } {
+  if (target.artifactId !== artifact.id) return { status: 'orphaned' };
+  const node = artifact.nodes.find((n) => n.id === target.semanticNodeId);
+  return node ? { status: 'anchored', node } : { status: 'orphaned' };
+}
+
 export function locate(root: any, c: Comment): AnchorResult {
+  // Semantic targets do not resolve against the HTML DOM — they are anchored via
+  // resolveSemanticTarget(artifact, target). On the HTML surface they have no placement.
+  if (c.target.type === 'semantic') return { status: 'orphaned' };
+
   const t = c.target;
 
   if (t.type === 'element') {
@@ -560,7 +592,10 @@ export function addComment(
     lifecycle: 'open',
     anchorStatus: 'anchored',
     target,
-    lastKnownContext: target.type === 'element' ? target.snippet : target.quote,
+    lastKnownContext:
+      target.type === 'element' ? target.snippet
+      : target.type === 'semantic' ? (target.nodeLabel ?? target.semanticNodeId)
+      : target.quote,
     resolution: null,
     replies: [],
     mentions,
@@ -602,7 +637,8 @@ export function addReply(commentId: string, body: string): Reply {
 
 export function resolveComment(
   commentId: string,
-  changeLink?: { before: string; after: string } | null
+  changeLink?: { before: string; after: string } | null,
+  versionNumber?: number
 ): Comment {
   const c = commentsList.find(x => x.id === commentId);
   if (!c) {
@@ -610,13 +646,23 @@ export function resolveComment(
   }
   const author = currentUserVal;
   c.lifecycle = 'resolved';
-  c.resolution = {
+  const resolution: Resolution = {
     resolvedBy: author,
     resolvedAt: Date.now(),
     changeLink: changeLink || null
   };
+  if (versionNumber !== undefined) {
+    resolution.resolvedInVersion = versionNumber;
+  }
+  if (c.target.type === 'semantic') {
+    resolution.semanticNodeId = c.target.semanticNodeId;
+  }
+  c.resolution = resolution;
 
-  const eventName = changeLink ? 'resolved (content edited)' : 'resolved (no change)';
+  const versionSuffix = versionNumber !== undefined ? ` in v${versionNumber}` : '';
+  const eventName = changeLink
+    ? `resolved (content edited)${versionSuffix}`
+    : `resolved (no change)${versionSuffix}`;
   c.history.push({ event: eventName, who: author, when: Date.now() });
   return c;
 }

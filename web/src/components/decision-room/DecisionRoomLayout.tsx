@@ -15,7 +15,7 @@
  * `ReviewRail`/`CommentSidebar` itself.
  */
 
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import "@/app/decision-room.css";
 
 export interface DecisionRoomLayoutProps {
@@ -29,6 +29,10 @@ export interface DecisionRoomLayoutProps {
   /** Onboarding tour highlight state (brief: preserve existing tour behavior). */
   tourNavActive: boolean;
   tourCanvasActive: boolean;
+  /** Phase 7 (COLLAB-004): attached to the 3-pane root so `useCommentLinks`
+   *  can delegate hover/click across BOTH the canvas and the review rail
+   *  (a card hover must be able to light a canvas node and vice versa). */
+  rootRef?: RefObject<HTMLDivElement | null>;
 }
 
 export default function DecisionRoomLayout({
@@ -41,11 +45,12 @@ export default function DecisionRoomLayout({
   onCloseSidebar,
   tourNavActive,
   tourCanvasActive,
+  rootRef,
 }: DecisionRoomLayoutProps) {
   const navOpen = isSidebarOpen || tourNavActive;
 
   return (
-    <div className="decision-room-root pane-layout-container font-sans">
+    <div ref={rootRef} className="decision-room-root pane-layout-container font-sans">
       {/* Left nav overlay (mobile/collapsed-drawer pattern, unchanged from the
           pre-decomposition behavior — a plain scrim, no blur). */}
       <div

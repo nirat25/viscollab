@@ -14,12 +14,15 @@ import {
   canComment,
   canEdit,
   locate,
+  buildCommentTarget,
   type Comment,
+  type CommentGesture,
   type Reply
 } from "htmlcollab-app/collab";
 import type { SemanticArtifact } from "htmlcollab-app/semantic";
 import { planVisuals, type VisualPlan } from "htmlcollab-app/visual";
 import DocumentSurface, { type PendingSelection } from "../DocumentSurface";
+import CommentSidebar from "../CommentSidebar";
 import AuthScreen from "../auth/AuthScreen";
 import Header from "../Header";
 import WorkspaceSettingsModal from "../WorkspaceSettingsModal";
@@ -29,6 +32,7 @@ import WorkspaceNav from "./WorkspaceNav";
 import VisualTabs from "./VisualTabs";
 import ReviewRail from "./ReviewRail";
 import EmptyState from "./EmptyState";
+import { useCommentLinks } from "./useCommentLinks";
 import "@/app/decision-room.css";
 
 // Token mapping has been moved to API server.
@@ -508,6 +512,14 @@ export default function DecisionRoomApp() {
   const [commentFeedbackType, setCommentFeedbackType] = useState<"approve" | "flag" | "needs" | "question" | null>("question");
   const [selectedText, setSelectedText] = useState("");
   const [selectedRange, setSelectedRange] = useState<{ quote: string; prefix: string; suffix: string } | null>(null);
+  // Canvas-click gesture pending anchoring (COLLAB-002, brief §3) — set by
+  // useCommentLinks' onStartComment, cleared whenever the composer closes
+  // (submit or cancel, see the effect below).
+  const [pendingSemanticAnchor, setPendingSemanticAnchor] = useState<NonNullable<CommentGesture["semantic"]> | null>(null);
+
+  useEffect(() => {
+    if (!isAddingComment) setPendingSemanticAnchor(null);
+  }, [isAddingComment]);
 
   // Reply Form state — keyed per comment so threads don't share one buffer.
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -524,6 +536,11 @@ export default function DecisionRoomApp() {
   // Scroll container for the document review surface (owned here for in-page
   // anchor scrolling; the artifact DOM itself is owned by DocumentSurface).
   const previewContainerRef = useRef<HTMLDivElement>(null);
+
+  // 3-pane room root (COLLAB-004) — wraps BOTH the canvas and the review
+  // rail so useCommentLinks' delegated hover/click can link a canvas node to
+  // its comment card and back (brief §6.2).
+  const roomRootRef = useRef<HTMLDivElement>(null);
 
   // Convert Document Modal states
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
@@ -1010,6 +1027,7 @@ export default function DecisionRoomApp() {
   // inside DocumentSurface now — no per-mousemove React state in the parent.)
   const handleCommentSelection = React.useCallback((sel: PendingSelection) => {
     if (!currentUser || !canComment(activeDocumentRole)) return;
+    setPendingSemanticAnchor(null);
     setSelectedText(sel.quote);
     setSelectedRange({ quote: sel.quote, prefix: sel.prefix, suffix: sel.suffix });
     setCommentTargetSection(sel.sectionId);
@@ -1019,12 +1037,28 @@ export default function DecisionRoomApp() {
 
   // Whole-section comment via the hover toolbar button.
   const handleCommentSection = React.useCallback((sectionId: string) => {
+    setPendingSemanticAnchor(null);
     setSelectedText("");
     setSelectedRange(null);
     setCommentTargetSection(sectionId);
     setIsAddingComment(true);
     setIsCommentsOpen(true);
   }, []);
+
+  // Canvas-node click comment (COLLAB-002/004): useCommentLinks' onStartComment
+  // fires this when a decision-room node has no existing comment yet.
+  const handleStartSemanticComment = React.useCallback(
+    (gesture: NonNullable<CommentGesture["semantic"]>) => {
+      if (!currentUser || !canComment(activeDocumentRole)) return;
+      setSelectedText("");
+      setSelectedRange(null);
+      setCommentTargetSection("");
+      setPendingSemanticAnchor(gesture);
+      setIsAddingComment(true);
+      setIsCommentsOpen(true);
+    },
+    [currentUser, activeDocumentRole]
+  );
 
   // Add Comment Submission
   const handleAddComment = (e: React.FormEvent) => {
@@ -1039,6 +1073,14 @@ export default function DecisionRoomApp() {
       if (match[1]) mentions.push(match[1]);
     }
 
+    // COLLAB-002: the gesture that opened the composer decides the anchor
+    // type (semantic > text > section precedence) via the pure builder.
+    const target = buildCommentTarget({
+      semantic: pendingSemanticAnchor ?? undefined,
+      text: selectedRange ?? undefined,
+      section: commentTargetSection ? { id: commentTargetSection } : undefined,
+    });
+
     const newComment: Comment = {
       id,
       versionId: `v${activeVersionNum}`,
@@ -1048,20 +1090,10 @@ export default function DecisionRoomApp() {
       feedbackType: commentFeedbackType,
       lifecycle: "open",
       anchorStatus: "anchored",
-      target: selectedRange ? {
-        type: "text",
-        quote: selectedRange.quote,
-        prefix: selectedRange.prefix,
-        suffix: selectedRange.suffix
-      } : {
-        type: "element",
-        id: commentTargetSection,
-        path: `section#${commentTargetSection}`,
-        hash: 0,
-        tag: "section",
-        snippet: "Entire section comment"
-      },
-      lastKnownContext: selectedText || "Entire section comment",
+      target,
+      lastKnownContext: pendingSemanticAnchor
+        ? (pendingSemanticAnchor.nodeLabel ?? pendingSemanticAnchor.semanticNodeId)
+        : (selectedText || "Entire section comment"),
       resolution: null,
       replies: [],
       mentions,
@@ -1070,7 +1102,7 @@ export default function DecisionRoomApp() {
 
     const newComments = [...comments, newComment];
     setComments(newComments);
-    
+
     // Sync to server
     syncState(documentVersions, activeVersionNum, newComments, verdicts);
 
@@ -1079,6 +1111,7 @@ export default function DecisionRoomApp() {
     setIsAddingComment(false);
     setSelectedText("");
     setSelectedRange(null);
+    setPendingSemanticAnchor(null);
     // Switch to threads tab to show it
     setActiveTab("threads");
     setSelectedCommentId(id);
@@ -1115,21 +1148,32 @@ export default function DecisionRoomApp() {
   };
 
   // Resolve Comment
+  // Phase 7 (§7 "Resolved with change in vN"): records the HTML version
+  // active at resolution + (for semantic targets) the anchored node id, and
+  // reflects it in the history event text — kept behavior-parallel with the
+  // app's resolveComment(id, changeLink?, versionNumber?) (this is the LIVE
+  // path; DecisionRoomApp's handler is hand-rolled, not a call to that fn —
+  // see brief §1 "Surprise / constraint worth flagging").
   const handleResolveComment = (commentId: string) => {
     if (!currentUser) return;
     const updatedComments = comments.map(c => {
       if (c.id === commentId) {
+        const resolving = c.lifecycle === "open";
+        const resolution = resolving ? {
+          resolvedBy: currentUser.name,
+          resolvedAt: Date.now(),
+          resolvedInVersion: activeVersionNum,
+          ...(c.target.type === "semantic" ? { semanticNodeId: c.target.semanticNodeId } : {})
+        } : null;
+        const eventName = resolving ? `resolved (no change) in v${activeVersionNum}` : "reopened";
         return {
           ...c,
-          lifecycle: c.lifecycle === "open" ? "resolved" : "open" as any,
-          resolution: c.lifecycle === "open" ? {
-            resolvedBy: currentUser.name,
-            resolvedAt: Date.now()
-          } : null,
-          history: [...c.history, { 
-            event: c.lifecycle === "open" ? "resolved" : "reopened", 
-            who: currentUser.name, 
-            when: Date.now() 
+          lifecycle: resolving ? "resolved" : "open" as any,
+          resolution,
+          history: [...c.history, {
+            event: eventName,
+            who: currentUser.name,
+            when: Date.now()
           }]
         };
       }
@@ -1267,6 +1311,12 @@ export default function DecisionRoomApp() {
     
     const updatedComments = comments.map(c => {
       if (c.lifecycle === "resolved") return c;
+      // ORCHESTRATOR AMENDMENT (rebuild-architecture-phase7.md §2/§11 step 6):
+      // semantic-target comments never resolve against the HTML DOM (locate()
+      // returns { status: 'orphaned' } for them by design — see comments.ts).
+      // An HTML edit cannot move a semantic anchor, so leave these untouched
+      // instead of persisting that ephemeral orphaned status onto the comment.
+      if (c.target.type === "semantic") return c;
       const locateResult = locate(containerDiv, c);
       
       // Update history record
@@ -1416,6 +1466,17 @@ export default function DecisionRoomApp() {
     }
   }, []);
 
+  // COLLAB-004: delegated hover/click linking (canvas node <-> rail card) +
+  // per-node OPEN-comment-count badge stamping. Pure DOM side effects, off
+  // the React render path (brief §6.2) — see useCommentLinks.ts.
+  useCommentLinks({
+    rootRef: roomRootRef,
+    comments,
+    artifact: semanticArtifact,
+    onSelectComment: handleSelectComment,
+    onStartComment: handleStartSemanticComment,
+  });
+
   // If not hydrated yet
   if (!mounted) {
     return (
@@ -1559,26 +1620,52 @@ export default function DecisionRoomApp() {
     />
   );
 
+  // Router (brief §4 ARCH DECISION): the redesigned rail is decision-room-only
+  // — legacy docs (no semanticArtifact) keep the untouched dark CommentSidebar.
   const reviewRailContent = isCommentsOpen ? (
-    <ReviewRail
-      tourStep={tourStep}
-      isAddingComment={isAddingComment}
-      setIsAddingComment={setIsAddingComment}
-      selectedText={selectedText}
-      handleAddComment={handleAddComment}
-      commentText={commentText}
-      setCommentText={setCommentText}
-      commentFeedbackType={commentFeedbackType}
-      setCommentFeedbackType={setCommentFeedbackType}
-      comments={comments}
-      selectedCommentId={selectedCommentId}
-      setSelectedCommentId={setSelectedCommentId}
-      replyDrafts={replyDrafts}
-      setReplyDrafts={setReplyDrafts}
-      handleAddReply={handleAddReply}
-      currentUser={activeDocumentUser}
-      handleResolveComment={handleResolveComment}
-    />
+    semanticArtifact ? (
+      <ReviewRail
+        tourStep={tourStep}
+        isAddingComment={isAddingComment}
+        setIsAddingComment={setIsAddingComment}
+        selectedText={selectedText}
+        pendingSemanticAnchor={pendingSemanticAnchor}
+        handleAddComment={handleAddComment}
+        commentText={commentText}
+        setCommentText={setCommentText}
+        commentFeedbackType={commentFeedbackType}
+        setCommentFeedbackType={setCommentFeedbackType}
+        comments={comments}
+        selectedCommentId={selectedCommentId}
+        setSelectedCommentId={setSelectedCommentId}
+        replyDrafts={replyDrafts}
+        setReplyDrafts={setReplyDrafts}
+        handleAddReply={handleAddReply}
+        currentUser={activeDocumentUser}
+        handleResolveComment={handleResolveComment}
+        artifact={semanticArtifact}
+      />
+    ) : (
+      <CommentSidebar
+        tourStep={tourStep}
+        isAddingComment={isAddingComment}
+        setIsAddingComment={setIsAddingComment}
+        selectedText={selectedText}
+        handleAddComment={handleAddComment}
+        commentText={commentText}
+        setCommentText={setCommentText}
+        commentFeedbackType={commentFeedbackType}
+        setCommentFeedbackType={setCommentFeedbackType}
+        comments={comments}
+        selectedCommentId={selectedCommentId}
+        setSelectedCommentId={setSelectedCommentId}
+        replyDrafts={replyDrafts}
+        setReplyDrafts={setReplyDrafts}
+        handleAddReply={handleAddReply}
+        currentUser={activeDocumentUser}
+        handleResolveComment={handleResolveComment}
+      />
+    )
   ) : null;
 
   return (
@@ -1593,6 +1680,7 @@ export default function DecisionRoomApp() {
         onCloseSidebar={() => setIsSidebarOpen(false)}
         tourNavActive={tourStep === 0}
         tourCanvasActive={tourStep === 1}
+        rootRef={roomRootRef}
       />
 
       <WorkspaceSettingsModal

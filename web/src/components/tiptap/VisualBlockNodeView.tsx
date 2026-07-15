@@ -98,6 +98,7 @@ interface BodyProps {
   primaryNodeId: string | null;
   nodeMap: SemanticNodeMap;
   openQuestionsBlock: OpenQuestionsBlock | undefined;
+  blockId: string;
 }
 
 /* --------------------------- kind -> body adapters --------------------------- */
@@ -159,13 +160,13 @@ const ActionChecklistBody: FC<BodyProps> = ({ resolve, nodeMap }) => {
 
 /** Phase-4 placeholder body, unchanged content/logic — now owns its own card
  *  chrome since the wrapper no longer supplies one. Source tab is Phase 6. */
-const SourceExcerptBody: FC<BodyProps> = ({ resolve, primaryNodeId }) => {
+const SourceExcerptBody: FC<BodyProps> = ({ resolve, primaryNodeId, blockId }) => {
   const { getNode } = resolve;
   const node = getNode(primaryNodeId);
   const quote = node?.sourceRefs?.[0]?.quote;
   if (!node) {
     return (
-      <div style={S.card}>
+      <div style={S.card} data-visual-block-id={blockId}>
         <div style={S.header}>
           <h3 style={S.title}>Source Excerpt</h3>
           <span style={S.badge}>sourceExcerpt</span>
@@ -175,7 +176,7 @@ const SourceExcerptBody: FC<BodyProps> = ({ resolve, primaryNodeId }) => {
     );
   }
   return (
-    <div style={S.card} data-semantic-node-id={node.id}>
+    <div style={S.card} data-visual-block-id={blockId} data-semantic-node-id={node.id}>
       <div style={S.header}>
         <h3 style={S.title}>Source Excerpt</h3>
         <span style={S.badge}>sourceExcerpt</span>
@@ -240,7 +241,6 @@ export default function VisualBlockNodeView({ node }: NodeViewProps) {
 
   return (
     <NodeViewWrapper
-      data-visual-block-id={blockId}
       data-block-kind={blockKind}
       contentEditable={false}
       style={{ display: "block", margin: "20px 0" }}
@@ -251,9 +251,10 @@ export default function VisualBlockNodeView({ node }: NodeViewProps) {
           primaryNodeId={primaryNodeId}
           nodeMap={nodeMap}
           openQuestionsBlock={openQuestionsBlock}
+          blockId={blockId}
         />
       ) : (
-        <div style={S.card}>
+        <div style={S.card} data-visual-block-id={blockId}>
           <div style={S.header}>
             <h3 style={S.title}>{title}</h3>
             <span style={S.badge}>{blockKind}</span>

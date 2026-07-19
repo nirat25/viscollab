@@ -15,7 +15,8 @@ import { ingestDocxFromBuffer, ingestDocxFromPath, ingestGDocHtml, ingestRawHtml
 import { convertIR, type ConversionResult } from "./convert/index.js";
 import { ProgressReporter } from "./convert/progress.js";
 import type { TipTapDoc } from "./ir.js";
-import type { SemanticArtifact, AgentBrief } from "./semantic/types.js";
+import type { SemanticArtifact } from "./semantic/types.js";
+import type { AgentBrief } from "./agent/types.js";
 import type { VisualPlan } from "./visual/types.js";
 
 export type InputKind = "docx-path" | "docx-buffer" | "gdoc-html" | "raw-html";
@@ -43,7 +44,7 @@ export interface PipelineResult extends ConversionResult {
    *  not inline in `runPipeline`, so conversion and extraction fail independently. */
   semanticArtifact?: SemanticArtifact;
   visualPlan?: VisualPlan;
-  /** Phase 8; stays undefined in Phases 0–6. */
+  /** Phase 8 contract. Generated on demand and not persisted until Phase 9. */
   agentBrief?: AgentBrief;
 }
 

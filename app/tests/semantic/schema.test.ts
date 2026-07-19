@@ -212,3 +212,53 @@ describe("rule 9: sourceStatus enum (review hardening)", () => {
     expect(result.errors.some((e) => e.includes("invalid sourceStatus"))).toBe(true);
   });
 });
+
+describe("rule 10: SourceRef shape (export-boundary hardening)", () => {
+  it.each([
+    ["non-object ref", null, "expected an object"],
+    ["missing quote", {}, "quote must be a non-empty string"],
+    ["blank quote", { quote: "   " }, "quote must be a non-empty string"],
+    ["invalid blockPath type", { quote: "valid", blockPath: "0" }, "blockPath"],
+    ["negative blockPath entry", { quote: "valid", blockPath: [0, -1] }, "blockPath"],
+    ["fractional blockPath entry", { quote: "valid", blockPath: [0.5] }, "blockPath"],
+    ["negative charStart", { quote: "valid", charStart: -1 }, "charStart"],
+    ["fractional charEnd", { quote: "valid", charEnd: 2.5 }, "charEnd"],
+    ["reversed range", { quote: "valid", charStart: 8, charEnd: 2 }, "charEnd must be greater"],
+  ])("rejects %s", (_label, ref, expectedError) => {
+    const artifact = clone(baseArtifact()) as unknown as { nodes: Array<Record<string, unknown>> };
+    artifact.nodes[1]!["sourceRefs"] = [ref];
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes(expectedError))).toBe(true);
+  });
+
+  it("rejects a non-array sourceRefs value even for missing evidence", () => {
+    const artifact = clone(baseArtifact()) as unknown as { nodes: Array<Record<string, unknown>> };
+    artifact.nodes[1]!["sourceStatus"] = "missing_evidence";
+    artifact.nodes[1]!["sourceRefs"] = { quote: "not in an array" };
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes("invalid sourceRefs"))).toBe(true);
+  });
+
+  it("accepts canonical optional paths and coherent character offsets", () => {
+    const artifact = clone(baseArtifact());
+    artifact.nodes[1]!.sourceRefs = [{ quote: "some risk text", blockPath: [0, 2], charStart: 4, charEnd: 18 }];
+    expect(validateSemanticArtifact(artifact)).toEqual({ valid: true, errors: [] });
+  });
+});
+
+describe("canonical scalar and relationship shapes (agent-boundary hardening)", () => {
+  it.each([
+    ["artifact title", (a: any) => { a.title = { token: "secret" }; }, "invalid artifact title"],
+    ["node title", (a: any) => { a.nodes[1].title = { token: "secret" }; }, "invalid title on node"],
+    ["action owner", (a: any) => { a.nodes[1] = { ...a.nodes[1], kind: "action", owner: { token: "secret" } }; }, "invalid owner"],
+    ["relationship value", (a: any) => { a.nodes[1].relationships = { blocks: [{ token: "secret" }] }; }, "non-string id"],
+  ])("rejects a noncanonical %s", (_label, mutate, expected) => {
+    const artifact = clone(baseArtifact()) as any;
+    mutate(artifact);
+    const result = validateSemanticArtifact(artifact);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes(expected))).toBe(true);
+  });
+});

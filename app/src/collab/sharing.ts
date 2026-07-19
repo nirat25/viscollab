@@ -101,6 +101,14 @@ export function canEdit(role: AccessRole): boolean {
 }
 
 /**
+ * Phase-8 export is restricted to people who can edit the decision room.
+ * A separate export capability, if needed, belongs to the Phase-9 permissions model.
+ */
+export function canExportAgentData(role: AccessRole): boolean {
+  return canEdit(role);
+}
+
+/**
  * Guard to check if a user can generate a share link for a document.
  * External users are blocked from generating share links for Drafts.
  */

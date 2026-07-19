@@ -98,16 +98,6 @@ export interface SemanticArtifact {
   extractedBy: "mock" | string; // model id or "mock"
 }
 
-/** Phase-8 forward-compat stub ONLY. Defined now (plan lists it in v1 public types) but NOT
- *  generated in Phases 0–6. `PipelineResult.agentBrief` stays undefined until the agent layer. */
-export interface AgentBrief {
-  decisionsNeeded: SemanticNodeId[];
-  blockers: SemanticNodeId[];
-  unsupportedAssumptions: SemanticNodeId[];
-  actionItems: SemanticNodeId[];
-  suggestedQuestions: string[];
-}
-
 /*
  * Kind-prefix map for ids (deterministic): `decision→decision`, `claim→claim`,
  * `evidence→evidence`, `assumption→assumption`, `risk→risk`, `option→option`,

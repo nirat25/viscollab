@@ -34,12 +34,16 @@ const TRACKED_KEYS = [
   "CONVERT_MODEL",
   "EDIT_MODEL",
   "JUDGE_MODEL",
+  "EXTRACT_MODEL",
+  "ASK_MODEL",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
   "CONVERT_MODEL_FALLBACKS",
   "EDIT_MODEL_FALLBACKS",
   "JUDGE_MODEL_FALLBACKS",
+  "EXTRACT_MODEL_FALLBACKS",
+  "ASK_MODEL_FALLBACKS",
 ];
 
 let snapshot: EnvSnapshot;
@@ -90,6 +94,10 @@ describe("getModel — anthropic defaults", () => {
   it("returns a claude model for judge role", () => {
     expect(getModel("judge")).toMatch(/claude/i);
   });
+
+  it("returns a fast claude model for ask role", () => {
+    expect(getModel("ask")).toBe("claude-haiku-4-5");
+  });
 });
 
 describe("getModel — openai defaults", () => {
@@ -106,6 +114,10 @@ describe("getModel — openai defaults", () => {
 
   it("returns a gpt model for edit role", () => {
     expect(getModel("edit")).toMatch(/gpt/i);
+  });
+
+  it("returns a fast gpt model for ask role", () => {
+    expect(getModel("ask")).toBe("gpt-4o-mini");
   });
 });
 
@@ -125,6 +137,11 @@ describe("getModel — per-role env override", () => {
   it("JUDGE_MODEL override takes precedence", () => {
     process.env["JUDGE_MODEL"] = "judge-model-v2";
     expect(getModel("judge")).toBe("judge-model-v2");
+  });
+
+  it("ASK_MODEL override takes precedence", () => {
+    process.env["ASK_MODEL"] = "ask-model-v1";
+    expect(getModel("ask")).toBe("ask-model-v1");
   });
 
   it("override works even when provider is openai", () => {
@@ -148,6 +165,7 @@ describe("providerInfo", () => {
     const info = providerInfo();
     expect(info).toContain("convert=");
     expect(info).toContain("edit=");
+    expect(info).toContain("ask=");
   });
 
   it("includes OPENAI_BASE_URL when set", () => {
@@ -210,6 +228,11 @@ describe("getModelFallbacks", () => {
     expect(getModelFallbacks("edit")).toEqual(["x/y"]);
     expect(getModelFallbacks("convert")).toEqual([]);
   });
+
+  it("parses ASK_MODEL_FALLBACKS independently", () => {
+    process.env["ASK_MODEL_FALLBACKS"] = "a/b, c/d";
+    expect(getModelFallbacks("ask")).toEqual(["a/b", "c/d"]);
+  });
 });
 
 // ── buildOpenAIRequestBody ────────────────────────────────────────────────────
@@ -243,6 +266,7 @@ describe("buildOpenAIRequestBody — OpenRouter", () => {
     delete process.env["CONVERT_MODEL_FALLBACKS"];
     delete process.env["EDIT_MODEL_FALLBACKS"];
     delete process.env["JUDGE_MODEL_FALLBACKS"];
+    delete process.env["ASK_MODEL_FALLBACKS"];
   });
 
   it("routes to the cheapest provider by default", () => {
@@ -281,6 +305,18 @@ describe("buildOpenAIRequestBody — OpenRouter", () => {
     const editBody = buildOpenAIRequestBody({ role: "edit", system: "s", user: "u" });
     expect(editBody.models).toBeUndefined();
     expect(typeof editBody.model).toBe("string");
+  });
+
+  it("builds an Ask-specific model fallback request", () => {
+    process.env["ASK_MODEL"] = "openai/gpt-4o-mini";
+    process.env["ASK_MODEL_FALLBACKS"] = "google/gemini-2.0-flash-001, anthropic/claude-3.5-haiku";
+    const body = buildOpenAIRequestBody({ role: "ask", system: "ask-system", user: "ask-user", maxTokens: 2048 });
+    expect(body).toMatchObject({
+      models: ["openai/gpt-4o-mini", "google/gemini-2.0-flash-001", "anthropic/claude-3.5-haiku"],
+      provider: { sort: "price", allow_fallbacks: true },
+      max_tokens: 2048,
+    });
+    expect(body.model).toBeUndefined();
   });
 });
 

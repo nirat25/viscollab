@@ -23,8 +23,10 @@ export type {
   StakeholderNode,
   SemanticNode,
   SemanticArtifact,
-  AgentBrief,
 } from "./types.js";
+
+/** @deprecated Import `AgentBrief` from `htmlcollab-app/agent` in new code. */
+export type { AgentBrief } from "../agent/types.js";
 
 export type { SchemaResult } from "./schema.js";
 export { validateSemanticArtifact } from "./schema.js";

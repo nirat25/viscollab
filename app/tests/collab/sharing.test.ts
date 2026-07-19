@@ -3,6 +3,7 @@ import {
   canView,
   canComment,
   canEdit,
+  canExportAgentData,
   canGenerateShareLink,
   clearTokens,
   registerToken,
@@ -37,6 +38,14 @@ describe('Sharing & Permissions', () => {
       expect(canComment('collaborator')).toBe(true);
       expect(canEdit('owner')).toBe(true);
       expect(canEdit('collaborator')).toBe(true);
+    });
+
+    it('only permits owners and collaborators to export agent data', () => {
+      expect(canExportAgentData('owner')).toBe(true);
+      expect(canExportAgentData('collaborator')).toBe(true);
+      expect(canExportAgentData('viewer')).toBe(false);
+      expect(canExportAgentData('commenter')).toBe(false);
+      expect(canExportAgentData('comment')).toBe(false);
     });
   });
 

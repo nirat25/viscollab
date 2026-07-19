@@ -1,10 +1,11 @@
 # Decision-Rooms Rebuild — Status & Handoff Checklist
 
-Last updated: **2026-07-15** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–7 ✅ (both gates PASSED) → STOPPED at the owner UX checkpoint. Do not start Phase 8 until the owner reviews the semantic review rail and says go.**
+Last updated: **2026-07-19** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–8 ✅ (all gates PASSED) → STOPPED before Phase 9 for the next owner checkpoint.**
 
 ## Governing docs (read in this order)
 1. `docs/rebuild-architecture.md` — **BINDING** architecture brief (Phases 0–6). Type contracts are copied verbatim into code; §4 planner rules, §5 extraction contract, §7 projection/layout, §8 build order + review checklists, §12 pinned dependency versions.
 1b. `docs/rebuild-architecture-phase7.md` — **BINDING** for Phase 7 (semantic comments + review rail), subordinate to 1's §0 ground rules.
+1c. `docs/rebuild-architecture-phase8.md` — **BINDING** for Phase 8 (agent-ready layer, grounded Ask, export, RBAC, UI, gates), subordinate to 1's §0 ground rules.
 2. `docs/visual-decision-room-plan.md` — product/phase plan (Phases 0–10) + granular task queue.
 3. `htmlcollab-prd-and-plan.md` — tenets §6, anti-scope §7, decision log Part 4 (the "why"). Its 2026-07-12 addendum delegates rebuild implementation to docs 1–2.
 
@@ -13,6 +14,7 @@ Last updated: **2026-07-15** · Branch: **`rebuild/decision-rooms`** (do NOT pus
 - Builder/reviewer split: Sonnet-class model builds; Opus-class architect wrote the brief and reviews each phase's diff. (Provider-agnostic equivalent: any strong model may review, but review against `rebuild-architecture.md` §8 checklists.)
 - Real-LLM validation at phase gates; deterministic mocks everywhere in CI.
 - Commit per reviewed task group on this branch. Never push.
+- The owner's 2026-07-19 instruction to resume the remaining phase cleared the post-Phase-7 UX checkpoint and authorized Phase 8. Phase 8 is complete; stop before Phase 9 so persistence/RBAC scope can be bound and reviewed as the next gradual step.
 
 ## State checklist
 
@@ -53,8 +55,14 @@ Last updated: **2026-07-15** · Branch: **`rebuild/decision-rooms`** (do NOT pus
   - **Web wave:** BACK-008 landed (exactly one `data-visual-block-id` per block, leaf-owned); `useCommentLinks` (delegation + badge stamping + MutationObserver for tab remounts); new light `ReviewRail` (groups+counts, filters, semantic anchor chips, replies/@mentions, "Resolved in vN" + changeLink, e2e testid parity with CommentSidebar); composer via `buildCommentTarget`; amendment applied.
   - **Opus review: 1 BLOCKER found & fixed** (`81fd26e`): the hook's listener effect bound once against a null rootRef (layout not yet rendered at first effect run) and never re-ran — hover/click linking was dead while badges self-healed. Fixed with an `enabled` (mounted+auth) flag on both binding effects; also badge stamping bails on legacy docs. Remaining NITs → `BACK-018..019`.
 - ✅ **Phase 7 gate PASSED (2026-07-15)**: 334/334 app vitest offline; web tsc + prod build green; in-browser on the founder-memo room — node click → composer "COMMENTING ON: Sunset Anchor Classic" → posted → grouped under **Decisions (1)** (kind beats question feedback, per table) with semantic anchor chip; node badge "1" appeared (and cleared after resolve — open-only); card↔node hover lights `.dr-link-active` both directions (verified via DOM class check); Mark Resolved → **Resolved group, "Resolved in v1"**, Reopen offered; Unresolved filter empties the rail; legacy doc renders DocumentSurface + the OLD CommentSidebar (router split intact); zero console errors; desktop + mobile screenshots. **Caveat for the owner's manual pass:** the Source-tab text-selection→comment gesture could not be driven end-to-end in the agent browser pane (known rAF/synthetic-pointer quirk — the hover toolbar mounted once then wouldn't remount; real browsers unaffected per prior sessions). The path's code is untouched this phase + unit-covered (`buildCommentTarget` text precedence) — please click a text-selection comment once during review.
-- ⬜ **UX checkpoint: STOPPED here — show the owner before Phase 8+.**
-- ⬜ Phases 7–10 (per plan). Note for planning: the plan's task queue has no IDs for Phases 9–10 — extend with `PERS-00x`/`LOOP-00x` when you get there. E2E-001..004 remain unstarted.
+- ✅ **Owner UX checkpoint after Phase 7 CLEARED (2026-07-19)**: owner instructed the orchestrator to resume the remaining phase with builder/reviewer agents and full verification.
+- ✅ **Phase 8 — agent-ready layer** (`dff1a16` brief · `ef53c0b` app wave · `2da74ac` web wave, 2026-07-19; GPT-5.6 builders + independent high-reasoning reviews; orchestrator amended + verified):
+  - **Brief:** `docs/rebuild-architecture-phase8.md` is BINDING. AgentBrief stays deterministic/on-demand (Phase 9 owns persistence); Ask accepts only document ID/question/preset and loads canonical state server-side; the model returns node IDs/source-ref indexes only; canonical titles/quotes/offsets are hydrated after strict validation; export is an allowlisted owner/collaborator capability; no fake-agent/chat theater.
+  - **App wave:** new public `htmlcollab-app/agent` module (`types`, deterministic brief + validator, grounded Ask + mock, export allowlist, eval rubric), browser-safe `agent/client`, provider `ask` role/env/fallbacks, export RBAC helper, hardened semantic validation, compatibility re-export. Independent review found and fixed unknown-field export leakage, malformed SourceRef acceptance, stored-plan replacement, and missing bounds tests.
+  - **Web wave:** secured `POST /api/collab/ask` and `GET /api/collab/export`, direct document membership, strict request allowlist, ask quota, stable opaque/no-store failures, owner/collaborator export, compact one-shot Review assistant, canonical suggested questions, citation chips, export download, semantic “Review” header copy, keyboard tabs/valid ARIA, nested Source/visual scroll contract, and 375px control/tab refinements. Legacy documents keep the old Comments/DocumentSurface path.
+- ✅ **Phase 8 gate PASSED (2026-07-19)**: **380/380** app vitest offline; app typecheck/build; web tsc + production build; both new routes included in the Next route manifest; strict-body 400 and direct-membership 403 responses verified with `private, no-store` (export also `nosniff`); 375px root has no page overflow. **Real-LLM Ask gate PASSED** on the founder memo with `claude-haiku-4-5`: non-simulated answer, 8 canonical citations, strict citation validation `{valid:true}`. Independent final re-review: **PASS, no blockers**. Existing CSS Custom Highlight optimizer warnings remain unchanged.
+- ⬜ **NEXT: Phase 9 — persistence, identities, RBAC, durable audit/version model. STOPPED for owner checkpoint before architecture/implementation.** The plan's task queue has no Phase-9 IDs yet; extend it with `PERS-00x` only after binding the data migration, repository, authorization, and test strategy. E2E-001..004 remain unstarted.
+- ⬜ Phase 10 — closed-loop learning (`LOOP-00x`, likewise requires a bound brief after Phase 9).
 - ~~⬜ Web convert route wiring~~ ✅ DONE in Phase 6 (see above; BACK-012 decided: heuristic-only web mock mode).
 
 ## Invariants (enforced at every step)
@@ -67,8 +75,9 @@ Last updated: **2026-07-15** · Branch: **`rebuild/decision-rooms`** (do NOT pus
 
 ## Verify current state (run from repo root)
 ```bash
-cd app && npm run typecheck && npm run build && npx vitest run   # expect 297 passing
+cd app && npm run typecheck && npm run build && npx vitest run   # expect 380 passing
 npm run extract -- tests/fixtures/founder-strategy-memo.md --mock # offline pipeline smoke
 git log --oneline -8                                              # commits listed above
+cd ../web && npx tsc --noEmit && npm run build                    # Next production gate
 ```
 Real-LLM spot check (needs `app/.env` keys): `npm run extract -- tests/fixtures/founder-strategy-memo.md`

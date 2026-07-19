@@ -4,6 +4,7 @@ import { getUsers, saveUsers } from "./db";
 const isTest = process.env.PLAYWRIGHT_TEST === "true";
 const MAX_DAILY_CONVERSIONS = isTest ? 1000 : parseInt(process.env.MAX_DAILY_CONVERSIONS || "5", 10);
 const MAX_DAILY_EDITS = isTest ? 1000 : parseInt(process.env.MAX_DAILY_EDITS || "10", 10);
+const MAX_DAILY_ASKS = isTest ? 1000 : parseInt(process.env.MAX_DAILY_ASKS || "20", 10);
 
 export interface LimitCheckResult {
   allowed: boolean;
@@ -11,20 +12,38 @@ export interface LimitCheckResult {
   limit: number;
 }
 
+interface UsageStats {
+  date?: string;
+  conversionCount?: number;
+  editCount?: number;
+  askCount?: number;
+}
+
+interface UsageUser {
+  username?: unknown;
+  usageStats?: UsageStats;
+}
+
+function isUsageUser(value: unknown): value is UsageUser {
+  return typeof value === "object" && value !== null;
+}
+
 /**
  * Checks if the user is allowed to make another request of a given type today.
  * If allowed, increments the counter and saves user data.
  * 
  * @param username The name of the user whose limits are being checked.
- * @param type The type of operation, either "conversion" or "edit".
+ * @param type The type of operation.
  */
 export async function checkAndIncrementLimit(
   username: string,
-  type: "conversion" | "edit"
+  type: "conversion" | "edit" | "ask"
 ): Promise<LimitCheckResult> {
   const users = await getUsers();
   const user = users.find(
-    (u: any) => u.username?.toLowerCase() === username.toLowerCase()
+    (candidate: unknown): candidate is UsageUser =>
+      isUsageUser(candidate) && typeof candidate.username === "string" &&
+      candidate.username.toLowerCase() === username.toLowerCase()
   );
 
   if (!user) {
@@ -33,18 +52,34 @@ export async function checkAndIncrementLimit(
   }
 
   const today = new Date().toISOString().split("T")[0]; // format: YYYY-MM-DD
-  const limit = type === "conversion" ? MAX_DAILY_CONVERSIONS : MAX_DAILY_EDITS;
-
   // Initialize usage stats if they don't exist or if a new day has started
-  if (!user.usageStats || user.usageStats.date !== today) {
-    user.usageStats = {
+  let usage = user.usageStats;
+  if (!usage || usage.date !== today) {
+    usage = {
       date: today,
       conversionCount: 0,
-      editCount: 0
+      editCount: 0,
+      askCount: 0,
     };
+    user.usageStats = usage;
   }
 
-  const currentCount = type === "conversion" ? user.usageStats.conversionCount : user.usageStats.editCount;
+  // Existing user records predate Ask. Normalize the newly introduced counter
+  // without resetting the other same-day counters.
+  if (typeof usage.conversionCount !== "number") usage.conversionCount = 0;
+  if (typeof usage.editCount !== "number") usage.editCount = 0;
+  if (typeof usage.askCount !== "number") usage.askCount = 0;
+
+  const limit = type === "conversion"
+    ? MAX_DAILY_CONVERSIONS
+    : type === "edit"
+      ? MAX_DAILY_EDITS
+      : MAX_DAILY_ASKS;
+  const currentCount = type === "conversion"
+    ? usage.conversionCount
+    : type === "edit"
+      ? usage.editCount
+      : usage.askCount;
 
   if (currentCount >= limit) {
     return {
@@ -56,9 +91,11 @@ export async function checkAndIncrementLimit(
 
   // Increment usage count
   if (type === "conversion") {
-    user.usageStats.conversionCount++;
+    usage.conversionCount++;
+  } else if (type === "edit") {
+    usage.editCount++;
   } else {
-    user.usageStats.editCount++;
+    usage.askCount++;
   }
 
   // Save the updated list of users to the database

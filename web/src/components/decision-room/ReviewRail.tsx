@@ -35,6 +35,7 @@ import {
 } from "htmlcollab-app/collab";
 import type { SemanticArtifact, SemanticNode, SemanticNodeKind } from "htmlcollab-app/semantic";
 import { kindLabel, nodeDisplayTitle } from "@/components/visual/shared";
+import ReviewAssistant from "./ReviewAssistant";
 
 const FILTER_LABEL: Record<ReviewFilterKey, string> = {
   unresolved: "Unresolved",
@@ -92,6 +93,7 @@ function anchorDisplay(c: Comment, artifact: SemanticArtifact | undefined): Anch
 }
 
 export interface ReviewRailProps {
+  documentId: string;
   tourStep: number | null;
   isAddingComment: boolean;
   setIsAddingComment: (val: boolean) => void;
@@ -120,6 +122,7 @@ export interface ReviewRailProps {
 }
 
 export default function ReviewRail({
+  documentId,
   tourStep,
   isAddingComment,
   setIsAddingComment,
@@ -172,11 +175,13 @@ export default function ReviewRail({
   return (
     <aside
       id="tour-right-collab"
+      aria-label="Decision room review"
       className={`pane-right-sidebar dr-rail transition-all ${
         tourStep === 3 ? "dr-rail-tour" : ""
       }`}
     >
       <div className="pane-right-sidebar-scroll dr-rail-scroll">
+        {artifact && <ReviewAssistant key={documentId} documentId={documentId} artifact={artifact} />}
         {isAddingComment && (
           <div className="dr-rail-composer">
             <div className="dr-rail-composer-header">
@@ -245,6 +250,7 @@ export default function ReviewRail({
               key={key}
               type="button"
               onClick={() => toggleFilter(key)}
+              aria-pressed={activeFilters.has(key)}
               className={`dr-rail-filter-btn ${activeFilters.has(key) ? "dr-rail-filter-btn-active" : ""}`}
             >
               {FILTER_LABEL[key]}

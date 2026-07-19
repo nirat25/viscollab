@@ -15,12 +15,13 @@ interface HeaderProps {
   setIsCommentsOpen: (isOpen: boolean) => void;
   handleLogout: () => void;
   activeWorkspaceId: string | null;
+  isSemanticRoom: boolean;
 }
 
 export default function Header({
   setIsSidebarOpen, documents, activeDocumentId, documentVersions,
   activeVersionNum, setActiveVersionNum, currentUser, setIsConvertModalOpen,
-  isCommentsOpen, setIsCommentsOpen, handleLogout, activeWorkspaceId
+  isCommentsOpen, setIsCommentsOpen, handleLogout, activeWorkspaceId, isSemanticRoom
 }: HeaderProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
@@ -98,11 +99,13 @@ export default function Header({
 
           <button
             onClick={() => setIsCommentsOpen(!isCommentsOpen)}
+            aria-expanded={isCommentsOpen}
+            aria-controls="tour-right-collab"
             className={`p-2 rounded-xl border transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${isCommentsOpen ? "bg-slate-800 text-white border-slate-800 shadow-sm" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm"}`}
-            title="Toggle Comments"
+            title={isSemanticRoom ? "Toggle Review" : "Toggle Comments"}
           >
             <MessageSquare className="h-4 w-4" />
-            <span className="hidden sm:inline">Comments</span>
+            <span className="hidden sm:inline">{isSemanticRoom ? "Review" : "Comments"}</span>
           </button>
 
           <button

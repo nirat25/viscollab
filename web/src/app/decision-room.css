@@ -1087,6 +1087,26 @@
   opacity: 0.9;
 }
 
+.dr-canvas-topline-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.dr-export-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.dr-export-error {
+  max-width: 220px;
+  margin: 0;
+  color: var(--dr-neg, #b91c1c);
+  font-size: 11px;
+  text-align: right;
+}
+
 /* Visual tabs (VisualTabs.tsx) */
 
 .dr-tabs {
@@ -1098,6 +1118,19 @@
   padding: 16px 20px 0;
 }
 
+.dr-tabpanel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dr-tabpanel > .pane-preview-body {
+  flex: 1;
+  min-height: 0;
+}
+
 .dr-tabstrip {
   display: flex;
   gap: 4px;
@@ -1107,6 +1140,7 @@
   border-radius: 10px;
   margin: 0 0 4px;
   flex-shrink: 0;
+  overflow-x: auto;
 }
 
 .dr-tab {
@@ -1119,6 +1153,17 @@
   background: transparent;
   color: var(--dr-ink-muted, #64748b);
   cursor: pointer;
+}
+
+.dr-tab:focus-visible,
+.dr-canvas-topline-btn:focus-visible,
+.dr-rail-filter-btn:focus-visible,
+.dr-review-suggestion:focus-visible,
+.dr-review-ask-button:focus-visible,
+.dr-review-question:focus-visible,
+.dr-select:focus-visible {
+  outline: 2px solid var(--dr-accent, #4338ca);
+  outline-offset: 2px;
 }
 
 .dr-tab:hover:not(.dr-tab-disabled) {
@@ -1242,6 +1287,130 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Phase 8: visible, one-shot grounded review. It intentionally sits above
+ * comments and does not retain a chat transcript. */
+.dr-review-assistant {
+  background: var(--dr-surface, #ffffff);
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.dr-review-assistant-heading h3 {
+  color: var(--dr-ink, #0f172a);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dr-review-assistant-heading p {
+  color: var(--dr-ink-muted, #64748b);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.dr-review-assistant-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dr-review-assistant-label {
+  color: var(--dr-ink-soft, #334155);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dr-review-assistant-select,
+.dr-review-question {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dr-review-question {
+  resize: vertical;
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 8px;
+  background: var(--dr-canvas, #f8fafc);
+  color: var(--dr-ink, #0f172a);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.dr-review-suggestions,
+.dr-review-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dr-review-suggestion {
+  min-height: 44px;
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 8px;
+  background: var(--dr-canvas, #f8fafc);
+  color: var(--dr-ink-soft, #334155);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.dr-review-suggestion:hover {
+  border-color: var(--dr-accent, #4338ca);
+  color: var(--dr-accent, #4338ca);
+}
+
+.dr-review-ask-button {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dr-accent, #4338ca);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+}
+
+.dr-review-ask-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dr-review-status,
+.dr-review-error {
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+.dr-review-status { color: var(--dr-ink-muted, #64748b); }
+.dr-review-error { color: var(--dr-neg, #b91c1c); }
+
+.dr-review-answer {
+  border-top: 1px solid var(--dr-hairline, #e2e8f0);
+  color: var(--dr-ink-soft, #334155);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.dr-review-answer p { white-space: pre-line; }
+
+.dr-review-citations { margin-top: 10px; }
+
+.dr-review-citation {
+  border: 1px solid var(--dr-hairline, #e2e8f0);
+  border-radius: 999px;
+  background: var(--dr-canvas, #f8fafc);
+  color: var(--dr-ink-muted, #64748b);
+  font-size: 10px;
+  padding: 3px 8px;
 }
 
 .dr-rail-composer {
@@ -1703,4 +1872,42 @@
 
 .dr-rail-resolve-btn:hover {
   opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .dr-canvas-topline {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+
+  .dr-canvas-topline-left {
+    width: 100%;
+  }
+
+  .dr-export-control {
+    align-items: flex-start;
+  }
+
+  .dr-export-error { text-align: left; }
+
+  .dr-tabs {
+    padding: 12px 0 0;
+  }
+
+  .dr-tabstrip {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    gap: 2px;
+    padding: 4px 8px;
+  }
+
+  .dr-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .dr-review-assistant-form { gap: 10px; }
+  .dr-review-ask-button { min-height: 44px; }
 }

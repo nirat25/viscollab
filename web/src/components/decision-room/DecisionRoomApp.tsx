@@ -13,6 +13,7 @@ import {
   canView,
   canComment,
   canEdit,
+  canExportAgentData,
   locate,
   buildCommentTarget,
   type Comment,
@@ -31,6 +32,7 @@ import TopDecisionBar, { type DecisionVerdict } from "./TopDecisionBar";
 import WorkspaceNav from "./WorkspaceNav";
 import VisualTabs from "./VisualTabs";
 import ReviewRail from "./ReviewRail";
+import DecisionRoomExportButton from "./DecisionRoomExportButton";
 import EmptyState from "./EmptyState";
 import { useCommentLinks } from "./useCommentLinks";
 import "@/app/decision-room.css";
@@ -1557,6 +1559,9 @@ export default function DecisionRoomApp() {
           Create New Draft
         </button>
       )}
+      {semanticArtifact && canExportAgentData(activeDocumentRole) && (
+        <DecisionRoomExportButton documentId={activeDocumentId} />
+      )}
     </div>
   );
 
@@ -1573,7 +1578,7 @@ export default function DecisionRoomApp() {
     <div className="dr-canvas-frame">
       {canvasTopline}
       {semanticArtifact && effectivePlan ? (
-        <VisualTabs artifact={semanticArtifact} plan={effectivePlan} sourceContent={legacyDocumentSurface} />
+        <VisualTabs key={semanticArtifact.id} artifact={semanticArtifact} plan={effectivePlan} sourceContent={legacyDocumentSurface} />
       ) : (
         legacyDocumentSurface
       )}
@@ -1595,6 +1600,7 @@ export default function DecisionRoomApp() {
         setIsCommentsOpen={setIsCommentsOpen}
         handleLogout={handleLogout}
         activeWorkspaceId={activeWorkspaceId}
+        isSemanticRoom={Boolean(semanticArtifact)}
       />
       <TopDecisionBar
         title={semanticArtifact ? semanticArtifact.title : (documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview")}
@@ -1629,6 +1635,7 @@ export default function DecisionRoomApp() {
   const reviewRailContent = isCommentsOpen ? (
     semanticArtifact ? (
       <ReviewRail
+        documentId={activeDocumentId}
         tourStep={tourStep}
         isAddingComment={isAddingComment}
         setIsAddingComment={setIsAddingComment}

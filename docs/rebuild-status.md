@@ -1,11 +1,12 @@
 # Decision-Rooms Rebuild — Status & Handoff Checklist
 
-Last updated: **2026-07-19** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–8 ✅ (all gates PASSED) → STOPPED before Phase 9 for the next owner checkpoint.**
+Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–8 ✅ (all gates PASSED) → Phase 9 architecture is BINDING and implementation is underway.**
 
 ## Governing docs (read in this order)
 1. `docs/rebuild-architecture.md` — **BINDING** architecture brief (Phases 0–6). Type contracts are copied verbatim into code; §4 planner rules, §5 extraction contract, §7 projection/layout, §8 build order + review checklists, §12 pinned dependency versions.
 1b. `docs/rebuild-architecture-phase7.md` — **BINDING** for Phase 7 (semantic comments + review rail), subordinate to 1's §0 ground rules.
 1c. `docs/rebuild-architecture-phase8.md` — **BINDING** for Phase 8 (agent-ready layer, grounded Ask, export, RBAC, UI, gates), subordinate to 1's §0 ground rules.
+1d. `docs/rebuild-architecture-phase9.md` — **BINDING** for Phase 9 (durable persistence, immutable identities, direct room membership/RBAC, revisions, migration/rollback, audit, and gates), subordinate to 1's §0 ground rules.
 2. `docs/visual-decision-room-plan.md` — product/phase plan (Phases 0–10) + granular task queue.
 3. `htmlcollab-prd-and-plan.md` — tenets §6, anti-scope §7, decision log Part 4 (the "why"). Its 2026-07-12 addendum delegates rebuild implementation to docs 1–2.
 
@@ -14,7 +15,7 @@ Last updated: **2026-07-19** · Branch: **`rebuild/decision-rooms`** (do NOT pus
 - Builder/reviewer split: Sonnet-class model builds; Opus-class architect wrote the brief and reviews each phase's diff. (Provider-agnostic equivalent: any strong model may review, but review against `rebuild-architecture.md` §8 checklists.)
 - Real-LLM validation at phase gates; deterministic mocks everywhere in CI.
 - Commit per reviewed task group on this branch. Never push.
-- The owner's 2026-07-19 instruction to resume the remaining phase cleared the post-Phase-7 UX checkpoint and authorized Phase 8. Phase 8 is complete; stop before Phase 9 so persistence/RBAC scope can be bound and reviewed as the next gradual step.
+- The owner's 2026-07-19 instruction to resume the remaining phase cleared the post-Phase-7 UX checkpoint and authorized Phase 8. The owner cleared the Phase-9 architecture gate on **2026-07-20**; `rebuild-architecture-phase9.md` and the dated plan clarifications are now binding. Implement only the `PERS-001..010` sequence and its gates; no push.
 
 ## State checklist
 
@@ -61,7 +62,7 @@ Last updated: **2026-07-19** · Branch: **`rebuild/decision-rooms`** (do NOT pus
   - **App wave:** new public `htmlcollab-app/agent` module (`types`, deterministic brief + validator, grounded Ask + mock, export allowlist, eval rubric), browser-safe `agent/client`, provider `ask` role/env/fallbacks, export RBAC helper, hardened semantic validation, compatibility re-export. Independent review found and fixed unknown-field export leakage, malformed SourceRef acceptance, stored-plan replacement, and missing bounds tests.
   - **Web wave:** secured `POST /api/collab/ask` and `GET /api/collab/export`, direct document membership, strict request allowlist, ask quota, stable opaque/no-store failures, owner/collaborator export, compact one-shot Review assistant, canonical suggested questions, citation chips, export download, semantic “Review” header copy, keyboard tabs/valid ARIA, nested Source/visual scroll contract, and 375px control/tab refinements. Legacy documents keep the old Comments/DocumentSurface path.
 - ✅ **Phase 8 gate PASSED (2026-07-19)**: **380/380** app vitest offline; app typecheck/build; web tsc + production build; both new routes included in the Next route manifest; strict-body 400 and direct-membership 403 responses verified with `private, no-store` (export also `nosniff`); 375px root has no page overflow. **Real-LLM Ask gate PASSED** on the founder memo with `claude-haiku-4-5`: non-simulated answer, 8 canonical citations, strict citation validation `{valid:true}`. Independent final re-review: **PASS, no blockers**. Existing CSS Custom Highlight optimizer warnings remain unchanged.
-- ⬜ **NEXT: Phase 9 — persistence, identities, RBAC, durable audit/version model. STOPPED for owner checkpoint before architecture/implementation.** The plan's task queue has no Phase-9 IDs yet; extend it with `PERS-00x` only after binding the data migration, repository, authorization, and test strategy. E2E-001..004 remain unstarted.
+- 🟡 **Phase 9 — persistence, identities, RBAC, durable audit/version model: architecture underway (owner gate cleared 2026-07-20).** `docs/rebuild-architecture-phase9.md` is BINDING and `PERS-001..010` are queued in the plan. Start with identity/capability/repository contracts, then adapters/migrations, then backfill/parity/rollback and safe E2E; preserve legacy routing and do not introduce request-time DDL, anonymous access, or surveillance. E2E-001..004 remain unstarted.
 - ⬜ Phase 10 — closed-loop learning (`LOOP-00x`, likewise requires a bound brief after Phase 9).
 - ~~⬜ Web convert route wiring~~ ✅ DONE in Phase 6 (see above; BACK-012 decided: heuristic-only web mock mode).
 

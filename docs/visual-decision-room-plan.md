@@ -228,6 +228,36 @@ A reviewer should be able to comment on "Risk R2," "Option B," or "Assumption A4
 5. Add compatibility migration for existing raw HTML documents into a legacy/source view.
 6. Add RBAC checks for semantic comments, verdicts, edits, and agent export.
 
+#### Phase 9 binding clarifications — 2026-07-20
+
+`docs/rebuild-architecture-phase9.md` is binding for this phase and resolves the deliberately
+high-level items above. Phase 9 is an account-gated persistence/compatibility step, not a product
+surface redesign. The owner cleared the architecture gate on 2026-07-20; implementation may begin
+only against that brief and its task/gate sequence.
+
+- Authorization is derived server-side from immutable account UUIDs and direct document membership.
+  Workspace membership grants navigation only, never implicit document access. Roles are exactly
+  viewer, commenter, collaborator, and owner; the Phase-9 capability matrix in the brief is the
+  only authority.
+- `DocumentStateV2` adds a monotonic document revision and `kind: legacy | decision_room`.
+  Decision-room semantic artifacts are canonical but intentionally unversioned. Visual plans,
+  TipTap JSON, and AgentBriefs are validated, fingerprinted derived caches, never alternative
+  sources of truth.
+- UI/API clients use narrow server commands with mandatory optimistic concurrency and a stable
+  `409 revision_conflict`, not whole-state/blob writes. Repository interfaces isolate all storage
+  shape; no route or component imports a database helper.
+- Production uses normalized Postgres tables plus ordered checksummed migrations and a migration
+  ledger. Requests never run DDL. JSON is explicit non-production local/E2E storage only and must
+  use an absolute approved path, mutex, temp-file validation, fsync where supported, and atomic
+  rename.
+- Cutover is backup → dry-run manifest → idempotent backfill → checksum/projection parity →
+  table-read canary with dual-write blob mirror → rollback-read drill. Any migration issue or parity
+  mismatch blocks cutover. Legacy raw-HTML rooms remain untouched in the legacy router; no semantic
+  artifact is invented for them.
+- Audit and agent records cover material user-initiated mutations only. Never persist viewing,
+  hover, presence, tab selection, time-on-page, or passive AgentBrief generation. E2E seeding is a
+  direct, production-refusing script using real credentials and a disposable store.
+
 ### Phase 10: Lovable Launch Loop
 
 1. Replace generic conversion progress with:
@@ -286,10 +316,27 @@ A reviewer should be able to comment on "Risk R2," "Option B," or "Assumption A4
 36. `AGENT-002`: Generate AgentBrief from semantic fixture.
 37. `AGENT-003`: Add grounded ask API skeleton.
 38. `AGENT-004`: Add citation validation tests.
-39. `E2E-001`: Replace skipped e2e seeding with script-based fixture seed.
-40. `E2E-002`: Add import-to-decision-room smoke test.
-41. `E2E-003`: Add desktop screenshot test.
-42. `E2E-004`: Add mobile screenshot test.
+39. `PERS-001`: Define immutable account/session identity and direct-document authorization types.
+40. `PERS-002`: Implement server-only role capability matrix and narrow command request schemas.
+41. `PERS-003`: Define `DocumentStateV2`, normalized durable-row mappings, revision conflicts, and
+    fingerprinted derived-cache validation.
+42. `PERS-004`: Introduce repository interface plus deterministic fake and hardened atomic JSON
+    local/E2E adapter.
+43. `PERS-005`: Implement explicit Postgres migrations, migration ledger, and production startup
+    refusal for missing/mismatched migration state.
+44. `PERS-006`: Implement direct room/workspace membership, owner invariants, and command-based
+    comments, verdicts, versions, membership, and ownership mutations.
+45. `PERS-007`: Add mutation-only audit and redacted user-initiated agent-run persistence.
+46. `PERS-008`: Build dry-run/idempotent legacy backfill, migration-issue ledger, parity reader,
+    table-read canary, dual-write mirror, and non-destructive rollback procedure.
+47. `PERS-009`: Preserve and test legacy raw-HTML routing/data compatibility without semantic
+    upgrade or anonymous access grants.
+48. `PERS-010`: Replace reset-style E2E setup with a guarded real-auth seed script and role,
+    revocation, import/legacy, desktop, and mobile coverage.
+49. `E2E-001`: Replace skipped e2e seeding with script-based fixture seed.
+50. `E2E-002`: Add import-to-decision-room smoke test.
+51. `E2E-003`: Add desktop screenshot test.
+52. `E2E-004`: Add mobile screenshot test.
 
 ## Test Plan
 

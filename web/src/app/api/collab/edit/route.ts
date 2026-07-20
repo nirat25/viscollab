@@ -1,189 +1,52 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-import { getState, saveState, getDocumentRole } from "../db";
-import { checkAndIncrementLimit } from "../limits";
+import { PersistenceCommandService } from "@/server/persistence";
 import { hasLlmKey } from "../llm";
-import { testSessionFallback } from "../testAuth";
-import { canEdit } from "htmlcollab-app/collab";
+import { simulateEdit, validateEditRequest, validateLlmSectionResult } from "htmlcollab-app/edit";
 import {
-  validateEditRequest,
-  validateLlmSectionResult,
-  simulateEdit,
-} from "htmlcollab-app/edit";
+  expectedRevision, isRecord, noStore, persistenceErrorResponse, persistenceRepository,
+  requiredString, revisionConflict, sessionAccountId,
+} from "../phase9";
 
-/**
- * POST /api/collab/edit
- *
- * Request JSON: { documentId, sectionId, sectionHtml, instruction }
- *
- * Behaviour:
- *  - If an LLM key is configured (ANTHROPIC_API_KEY or OPENAI_API_KEY):
- *      Call performSurgicalEdit from htmlcollab-app/edit.
- *      Validate the returned HTML has an element with id === sectionId (422 if not).
- *  - If NO key is configured:
- *      Return a deterministic, clearly-labelled simulation via simulateEdit().
- *
- * Response 200: { success: true, html: string, simulated: boolean }
- * Errors:       { success: false, error: string } with appropriate status.
- */
+export const dynamic = "force-dynamic";
+const REQUEST_KEYS = new Set(["documentId", "sectionId", "sectionHtml", "instruction", "expectedRevision"]);
+
+function escapeForRegex(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+/** Surgical edit reads canonical active source and persists only through editVersion. */
 export async function POST(request: Request) {
-  let session = await getServerSession(authOptions);
-  if (!session) {
-    session = testSessionFallback();
+  const accountId = await sessionAccountId();
+  if (!accountId) return noStore({ success: false, error: "unauthorized" }, 401);
+  let body: unknown;
+  try { body = await request.json(); } catch { return noStore({ success: false, error: "invalid_request" }, 400); }
+  if (!isRecord(body) || Object.keys(body).some((key) => !REQUEST_KEYS.has(key)) || validateEditRequest(body).length > 0) {
+    return noStore({ success: false, error: "invalid_request" }, 400);
   }
-  if (!session || !session.user) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (session.user.name) {
-    const limitCheck = await checkAndIncrementLimit(session.user.name, "edit");
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        { success: false, error: `You have reached your daily limit of ${limitCheck.limit} edits.` },
-        { status: 429 }
-      );
-    }
-  }
-
-  let body: Record<string, unknown>;
+  const documentId = requiredString(body.documentId);
+  const sectionId = requiredString(body.sectionId);
+  const sectionHtml = requiredString(body.sectionHtml, 1_000_000);
+  const instruction = requiredString(body.instruction, 20_000);
+  const revision = expectedRevision(body.expectedRevision);
+  if (!documentId || !sectionId || !sectionHtml || !instruction || revision === null) return noStore({ success: false, error: "invalid_request" }, 400);
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      { success: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Input validation
-  // -------------------------------------------------------------------------
-  const errors = validateEditRequest(body as any);
-  if (errors.length > 0) {
-    return NextResponse.json(
-      { success: false, error: errors.map((e) => e.message).join("; ") },
-      { status: 400 }
-    );
-  }
-
-  const { documentId, sectionId, sectionHtml, instruction } = body as {
-    documentId: string;
-    sectionId: string;
-    sectionHtml: string;
-    instruction: string;
-  };
-
-  // -------------------------------------------------------------------------
-  // Per-document write authorization: the requester must be a member of this
-  // document with an edit-capable role. Not a member / cannot edit -> 403.
-  // -------------------------------------------------------------------------
-  const docRole = await getDocumentRole(documentId, session.user.name || "");
-  if (!docRole || !canEdit(docRole as any)) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
-  }
-
-  // -------------------------------------------------------------------------
-  // Determine whether an LLM key is available (shared detection helper)
-  // -------------------------------------------------------------------------
-  const hasKey = hasLlmKey();
-
-  try {
-    if (hasKey) {
-      // -------------------------------------------------------------------
-      // LLM path — surgical edit via htmlcollab-app
-      // Lazy import so the no-key path never loads the SDK.
-      // -------------------------------------------------------------------
-      const { performSurgicalEdit } = await import("htmlcollab-app/edit");
-
-      // Load current document state to get the full document HTML
-      const state = await getState(documentId);
-      if (!state) {
-        return NextResponse.json(
-          { success: false, error: "Document not found" },
-          { status: 404 }
-        );
-      }
-
-      const activeVersion = (state.versions as any[]).find(
-        (v: any) => v.versionNumber === state.activeVersionNum
-      );
-      if (!activeVersion) {
-        return NextResponse.json(
-          { success: false, error: "Active version not found in document state" },
-          { status: 500 }
-        );
-      }
-
-      // performSurgicalEdit returns the full updated document HTML.
-      const updatedDocHtml: string = await performSurgicalEdit(
-        activeVersion.html as string,
-        sectionId,
-        instruction
-      );
-
-      // Extract just the updated section to return to the client.
-      // We use a simple regex to pull the outerHTML by id — avoids importing
-      // node-html-parser in the web package.  The section id was already
-      // validated to exist by performSurgicalEdit (it throws if not found).
-      // We also run the containment contract check via our pure helper.
-      const idAttrRe = new RegExp(
-        `<([a-zA-Z][a-zA-Z0-9-]*)\\b[^>]*\\bid\\s*=\\s*["']${escapeForRegex(sectionId)}["'][^>]*>[\\s\\S]*?</\\1>`,
-        "i"
-      );
-      const sectionMatch = updatedDocHtml.match(idAttrRe);
-      const updatedSectionHtml = sectionMatch ? sectionMatch[0] : updatedDocHtml;
-
-      // Validate containment contract on the extracted section fragment.
-      const contractError = validateLlmSectionResult(updatedSectionHtml, sectionId);
-      if (contractError) {
-        return NextResponse.json(
-          { success: false, error: contractError },
-          { status: 422 }
-        );
-      }
-
-      // Persist updated document state
-      const updatedVersions = (state.versions as any[]).map((v: any) =>
-        v.versionNumber === state.activeVersionNum
-          ? { ...v, html: updatedDocHtml, timestamp: new Date().toISOString() }
-          : v
-      );
-      await saveState(
-        { ...state, versions: updatedVersions, updatedAt: new Date().toISOString() },
-        documentId
-      );
-
-      return NextResponse.json({
-        success: true,
-        html: updatedSectionHtml,
-        simulated: false,
-      });
-    } else {
-      // -------------------------------------------------------------------
-      // No-key simulation path — purely deterministic, no LLM call
-      // -------------------------------------------------------------------
-      const simulatedHtml = simulateEdit(sectionHtml, sectionId, instruction);
-
-      return NextResponse.json({
-        success: true,
-        html: simulatedHtml,
-        simulated: true,
-      });
+    const repository = await persistenceRepository();
+    const room = await repository.readRoom(accountId, documentId);
+    if (!room || !room.capabilities.includes("room.edit")) return noStore({ success: false, error: "forbidden" }, 403);
+    if (room.state.revision !== revision) return revisionConflict(room.state.revision);
+    if (!hasLlmKey()) {
+      // Simulation is intentionally non-persistent, but still account/capability scoped.
+      return noStore({ success: true, html: simulateEdit(sectionHtml, sectionId, instruction), simulated: true, revision: room.state.revision });
     }
-  } catch (err: any) {
-    const status =
-      err?.name === "AmbiguityError" ? 422
-      : err?.message?.includes("not found") ? 404
-      : 500;
-
-    return NextResponse.json(
-      { success: false, error: err?.message ?? "Internal error" },
-      { status }
-    );
+    const active = room.state.versions.find((version) => version.versionNumber === room.state.activeVersionNumber);
+    if (!active) return noStore({ success: false, error: "invalid_stored_state" }, 409);
+    const { performSurgicalEdit } = await import("htmlcollab-app/edit");
+    const updatedDocumentHtml = await performSurgicalEdit(active.html, sectionId, instruction);
+    const idAttrRe = new RegExp(`<([a-zA-Z][a-zA-Z0-9-]*)\\b[^>]*\\bid\\s*=\\s*["']${escapeForRegex(sectionId)}["'][^>]*>[\\s\\S]*?</\\1>`, "i");
+    const updatedSectionHtml = updatedDocumentHtml.match(idAttrRe)?.[0] ?? updatedDocumentHtml;
+    const contractError = validateLlmSectionResult(updatedSectionHtml, sectionId);
+    if (contractError) return noStore({ success: false, error: "invalid_provider_output" }, 422);
+    const result = await new PersistenceCommandService(repository).editVersion({ accountId, documentId, expectedRevision: revision, html: updatedDocumentHtml });
+    if (!result.ok) return revisionConflict(result.currentRevision);
+    return noStore({ success: true, html: updatedSectionHtml, simulated: false, revision: result.state.revision });
+  } catch (error) {
+    return persistenceErrorResponse(error);
   }
-}
-
-function escapeForRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

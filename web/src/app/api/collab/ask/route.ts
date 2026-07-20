@@ -1,108 +1,60 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-import { getDocumentRole, getState } from "../db";
-import { checkAndIncrementLimit } from "../limits";
-import { hasLlmKey } from "../llm";
-import { isTestBypassEnabled, testSessionFallback } from "../testAuth";
 import { AGENT_PRESETS, askDecisionRoom, mockAskDecisionRoom } from "htmlcollab-app/agent";
+import { fingerprintSemanticArtifact } from "htmlcollab-app/persistence";
 import { validateSemanticArtifact } from "htmlcollab-app/semantic";
 import type { AgentPreset } from "htmlcollab-app/agent";
-import type { SemanticArtifact } from "htmlcollab-app/semantic";
+import { PersistenceCommandService } from "@/server/persistence";
+import { hasLlmKey } from "../llm";
+import {
+  expectedRevision, isRecord, noStore, persistenceErrorResponse, persistenceRepository,
+  requiredString, revisionConflict, sessionAccountId,
+} from "../phase9";
 
 export const dynamic = "force-dynamic";
 
-const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" };
 const MAX_QUESTION_LENGTH = 2_000;
-const REQUEST_KEYS = new Set(["documentId", "question", "preset"]);
-
-function response(body: unknown, status = 200): NextResponse {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const REQUEST_KEYS = new Set(["documentId", "question", "preset", "expectedRevision"]);
 
 function isAgentPreset(value: unknown): value is AgentPreset {
   return typeof value === "string" && (AGENT_PRESETS as readonly string[]).includes(value);
 }
 
-function isExplicitMockMode(): boolean {
-  return process.env.MOCK_AI === "true" || isTestBypassEnabled();
-}
+function mockMode(): boolean { return process.env.MOCK_AI === "true"; }
 
-function requestId(): string {
-  return crypto.randomUUID();
-}
-
-/** Phase-8 grounded Ask endpoint. The browser sends no artifact or room state. */
+/** The client supplies a question only; the server loads the authorized canonical artifact. */
 export async function POST(request: Request) {
-  const id = requestId();
+  const accountId = await sessionAccountId();
+  if (!accountId) return noStore({ error: "unauthorized" }, 401);
+  let body: unknown;
+  try { body = await request.json(); } catch { return noStore({ error: "invalid_request" }, 400); }
+  if (!isRecord(body) || Object.keys(body).some((key) => !REQUEST_KEYS.has(key))) return noStore({ error: "invalid_request" }, 400);
+  const documentId = requiredString(body.documentId);
+  const question = requiredString(body.question, MAX_QUESTION_LENGTH);
+  const revision = expectedRevision(body.expectedRevision);
+  if (!documentId || !question || revision === null || !isAgentPreset(body.preset)) return noStore({ error: "invalid_request" }, 400);
+
   try {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return response({ error: "Invalid request." }, 400);
-    }
-    if (!isRecord(body) || Object.keys(body).some((key) => !REQUEST_KEYS.has(key))) {
-      return response({ error: "Invalid request." }, 400);
-    }
-
-    const documentId = typeof body.documentId === "string" ? body.documentId.trim() : "";
-    const question = typeof body.question === "string" ? body.question.trim() : "";
-    const preset = body.preset;
-    if (
-      !documentId || documentId.length > 200 ||
-      !question || question.length > MAX_QUESTION_LENGTH ||
-      !isAgentPreset(preset)
-    ) {
-      return response({ error: "Invalid request." }, 400);
-    }
-
-    let session = await getServerSession(authOptions);
-    if (!session) session = testSessionFallback();
-    if (!session?.user?.name) return response({ error: "Unauthorized." }, 401);
-
-    const documentRole = await getDocumentRole(documentId, session.user.name);
-    if (!documentRole) return response({ error: "Forbidden." }, 403);
-
-    const state: unknown = await getState(documentId);
-    if (!isRecord(state)) return response({ error: "Decision room not found." }, 404);
-    if (!state.semanticArtifact) return response({ error: "This document is not a decision room." }, 409);
-
-    const artifactValidation = validateSemanticArtifact(state.semanticArtifact);
-    if (!artifactValidation.valid) {
-      console.error("Phase-8 Ask rejected invalid stored artifact", { requestId: id, category: "invalid_stored_artifact" });
-      return response({ error: "This decision room needs to be regenerated." }, 422);
-    }
-    const artifact = state.semanticArtifact as SemanticArtifact;
-    const limit = await checkAndIncrementLimit(session.user.name, "ask");
-    if (!limit.allowed) return response({ error: "You have reached today’s review-assistant limit." }, 429);
-
-    const mock = isExplicitMockMode();
-    if (!mock && !hasLlmKey()) return response({ error: "Review assistant is unavailable." }, 503);
-
-    try {
-      const answer = mock
-        ? mockAskDecisionRoom(artifact, question, preset)
-        : await askDecisionRoom(artifact, question, preset);
-      return response({ answer });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      const isInvalidOutput = /malformed|ungrounded|Ask JSON/i.test(message);
-      console.error("Phase-8 Ask provider failure", {
-        requestId: id,
-        category: isInvalidOutput ? "invalid_provider_output" : "provider_unavailable",
-      });
-      return response(
-        { error: isInvalidOutput ? "The review assistant returned an invalid grounded answer." : "Review assistant is unavailable." },
-        isInvalidOutput ? 502 : 503
-      );
-    }
+    const repository = await persistenceRepository();
+    const room = await repository.readRoom(accountId, documentId);
+    if (!room) return noStore({ error: "forbidden" }, 403);
+    if (!room.capabilities.includes("agent.ask")) return noStore({ error: "forbidden" }, 403);
+    // Avoid invoking a provider when a known-stale client cannot record the
+    // required success metadata against the current canonical room.
+    if (room.state.revision !== revision) return revisionConflict(room.state.revision);
+    const artifact = room.state.semanticArtifact;
+    if (!artifact) return noStore({ error: "not_a_decision_room" }, 409);
+    if (!validateSemanticArtifact(artifact).valid) return noStore({ error: "invalid_stored_artifact" }, 422);
+    const mock = mockMode();
+    if (!mock && !hasLlmKey()) return noStore({ error: "assistant_unavailable" }, 503);
+    const answer = mock ? mockAskDecisionRoom(artifact, question, body.preset) : await askDecisionRoom(artifact, question, body.preset);
+    // This is intentionally after a successful provider call. It stores no question or answer.
+    const recorded = await new PersistenceCommandService(repository).recordSuccessfulAsk({
+      accountId, documentId, expectedRevision: revision,
+      model: mock ? "mock" : "configured", preset: body.preset,
+      semanticArtifactFingerprint: fingerprintSemanticArtifact(artifact),
+    });
+    if (!recorded.ok) return revisionConflict(recorded.currentRevision);
+    return noStore({ answer, revision: recorded.state.revision });
   } catch (error) {
-    console.error("Phase-8 Ask handler failure", { requestId: id, category: "internal_failure" });
-    return response({ error: "Unable to review this room right now." }, 500);
+    return persistenceErrorResponse(error);
   }
 }

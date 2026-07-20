@@ -18,15 +18,16 @@ interface CommentSidebarProps {
   replyDrafts: Record<string, string>;
   setReplyDrafts: (val: React.SetStateAction<Record<string, string>>) => void;
   handleAddReply: (e: React.FormEvent, commentId: string) => void;
-  currentUser: { name: string; role: string } | null;
+  currentUser: { name: string; accountId: string; role: string } | null;
   handleResolveComment: (commentId: string) => void;
+  canResolveComment: (comment: Comment) => boolean;
 }
 
 export default function CommentSidebar({
   tourStep, isAddingComment, setIsAddingComment, selectedText,
   handleAddComment, commentText, setCommentText, commentFeedbackType,
   setCommentFeedbackType, comments, selectedCommentId, setSelectedCommentId,
-  replyDrafts, setReplyDrafts, handleAddReply, currentUser, handleResolveComment
+  replyDrafts, setReplyDrafts, handleAddReply, currentUser, handleResolveComment, canResolveComment
 }: CommentSidebarProps) {
   return (
         <aside 
@@ -193,7 +194,7 @@ export default function CommentSidebar({
                             </form>
 
                             {/* Resolve status button */}
-                            {currentUser && currentUser.role !== "viewer" && (
+                            {currentUser && canResolveComment(comment) && (
                               <button
                                 onClick={() => handleResolveComment(comment.id)}
                                 className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold self-start flex items-center gap-1.5 cursor-pointer bg-indigo-500/5 px-2 py-1 rounded-md"

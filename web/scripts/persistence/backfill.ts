@@ -66,6 +66,20 @@ function safeVerdict(value: unknown): "approve" | "request_changes" | "block" | 
   return null;
 }
 
+/** Normalized target JSONB keeps the legacy review payload lossless. */
+function commentTargetPayload(comment: JsonObject, resolvedByAccountId?: string): JsonObject {
+  const resolution = asObject(comment.resolution);
+  return {
+    target: asObject(comment.target) ?? {},
+    feedbackType: ["approve", "flag", "needs", "question"].includes(text(comment.feedbackType)) ? comment.feedbackType : null,
+    ...(typeof comment.posStart === "number" && Number.isFinite(comment.posStart) ? { posStart: comment.posStart } : {}),
+    ...(typeof comment.posEnd === "number" && Number.isFinite(comment.posEnd) ? { posEnd: comment.posEnd } : {}),
+    lastKnownContext: text(comment.lastKnownContext),
+    mentions: asArray(comment.mentions).filter((mention): mention is string => typeof mention === "string"),
+    resolution: resolution ? { ...resolution, ...(resolvedByAccountId ? { resolvedBy: resolvedByAccountId } : {}) } : null,
+  };
+}
+
 function classify(state: JsonObject): { kind: "legacy" | "decision_room"; visualPlan?: VisualPlan } {
   const artifact = state.semanticArtifact;
   const artifactCheck = validateSemanticArtifact(artifact);
@@ -416,7 +430,7 @@ async function insertDocument(client: Client, prepared: PreparedDocument, worksp
       await client.query(
         `INSERT INTO comment_threads (id, legacy_thread_id, document_id, version_id, author_account_id, target_payload, body, lifecycle, anchor_state, resolved_at, resolved_by_account_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::comment_lifecycle, $9::anchor_status, $10::timestamptz, $11, COALESCE($12::timestamptz, now()), COALESCE($13::timestamptz, now()))`,
-        [threadId, legacyCommentId, documentId, versionIdByLegacyId.get(text(comment.versionId)), authorAccountId, JSON.stringify(asObject(comment.target) ?? {}), text(comment.body, "(legacy comment)"), lifecycle, comment.anchorStatus === "stale" || comment.anchorStatus === "orphaned" ? comment.anchorStatus : "anchored", lifecycle === "resolved" ? sourceTimestamp(resolution?.resolvedAt) ?? sourceTimestamp(comment.createdAt) : undefined, resolvedByAccountId, sourceTimestamp(comment.createdAt), sourceTimestamp(comment.createdAt)],
+        [threadId, legacyCommentId, documentId, versionIdByLegacyId.get(text(comment.versionId)), authorAccountId, JSON.stringify(commentTargetPayload(comment, resolvedByAccountId)), text(comment.body, "(legacy comment)"), lifecycle, comment.anchorStatus === "stale" || comment.anchorStatus === "orphaned" ? comment.anchorStatus : "anchored", lifecycle === "resolved" ? sourceTimestamp(resolution?.resolvedAt) ?? sourceTimestamp(comment.createdAt) : undefined, resolvedByAccountId, sourceTimestamp(comment.createdAt), sourceTimestamp(comment.createdAt)],
       );
       for (const [replyIndex, rawReply] of asArray(comment.replies).entries()) {
         const reply = asObject(rawReply)!;

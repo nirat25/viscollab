@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Users, UserPlus, Loader2, Shield } from "lucide-react";
-import { useSession } from "next-auth/react";
 
 interface WorkspaceSettingsModalProps {
   isOpen: boolean;
@@ -10,22 +9,15 @@ interface WorkspaceSettingsModalProps {
 }
 
 export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }: WorkspaceSettingsModalProps) {
-  const { data: session } = useSession();
-  const currentUsername = (session?.user as any)?.name ?? "";
-
   const [members, setMembers] = useState<{username: string, role: string}[]>([]);
   const [workspaceName, setWorkspaceName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [inviteUsername, setInviteUsername] = useState("");
-  const [inviteRole, setInviteRole] = useState("collaborator");
   const [isInviting, setIsInviting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [mounted, setMounted] = useState(false);
-
-  const isOwner = members.some(
-    (m) => m.username.toLowerCase() === currentUsername.toLowerCase() && ["owner", "admin"].includes(m.role)
-  );
+  const [canManageWorkspace, setCanManageWorkspace] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -40,16 +32,12 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
     setIsLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/collab/workspaces`);
+      const res = await fetch(`/api/collab/workspaces?workspaceId=${workspaceId}`);
       const data = await res.json();
       if (res.ok) {
-        const ws = data.find((w: any) => w.id === workspaceId);
-        if (ws) {
-          setWorkspaceName(ws.name);
-          setMembers(ws.members || []);
-        } else {
-          setError("Workspace not found");
-        }
+        setWorkspaceName(data.name || "");
+        setMembers(data.members || []);
+        setCanManageWorkspace(Boolean(data.capabilities?.includes("workspace.member_manage")));
       } else {
         setError(data.error || "Failed to fetch workspaces");
       }
@@ -72,14 +60,13 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
       const res = await fetch("/api/collab/workspaces/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, workspaceId })
+        body: JSON.stringify({ username: inviteUsername.trim(), workspaceId })
       });
       const data = await res.json();
       
       if (res.ok && data.success) {
         setSuccessMsg("User invited to workspace successfully");
         setInviteUsername("");
-        setInviteRole("collaborator");
         await fetchWorkspaceDetails(); // Refresh the list
       } else {
         setError(data.error || "Failed to invite user");
@@ -141,7 +128,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           
           {/* Invite Section — only visible to owners/admins */}
-          {isOwner && (
+          {canManageWorkspace && (
           <section>
             <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
               <UserPlus className="h-4 w-4 text-slate-400" />
@@ -158,15 +145,6 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
                   className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   required
                 />
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                >
-                  <option value="admin">Admin</option>
-                  <option value="collaborator">Collaborator</option>
-                  <option value="viewer">Viewer</option>
-                </select>
                 <button
                   type="submit"
                   disabled={isInviting || !inviteUsername.trim()}
@@ -211,7 +189,7 @@ export default function WorkspaceSettingsModal({ isOpen, onClose, workspaceId }:
                           <p className="text-xs text-slate-500 capitalize">{member.role}</p>
                         </div>
                       </div>
-                      {isOwner && (
+                      {canManageWorkspace && (
                       <button
                         onClick={() => handleRemove(member.username)}
                         title="Remove member"

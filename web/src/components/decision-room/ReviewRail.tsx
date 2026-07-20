@@ -34,6 +34,7 @@ import {
   type ReviewFilterKey,
 } from "htmlcollab-app/collab";
 import type { SemanticArtifact, SemanticNode, SemanticNodeKind } from "htmlcollab-app/semantic";
+import type { DocumentStateV2 } from "htmlcollab-app/persistence";
 import { kindLabel, nodeDisplayTitle } from "@/components/visual/shared";
 import ReviewAssistant from "./ReviewAssistant";
 
@@ -114,11 +115,16 @@ export interface ReviewRailProps {
   replyDrafts: Record<string, string>;
   setReplyDrafts: (val: React.SetStateAction<Record<string, string>>) => void;
   handleAddReply: (e: React.FormEvent, commentId: string) => void;
-  currentUser: { name: string; role: string } | null;
+  currentUser: { name: string; accountId: string; role: string } | null;
   handleResolveComment: (commentId: string) => void;
+  canResolveComment: (comment: Comment) => boolean;
   /** For live node-kind/label resolution (grouping + anchor chips). Undefined
    *  is handled gracefully (falls back to each target's creation snapshot). */
   artifact: SemanticArtifact | undefined;
+  roomRevision: number | null;
+  onRoomState: (state: DocumentStateV2) => void;
+  onRoomRevision: (revision: number) => void;
+  onAccessLost: () => void;
 }
 
 export default function ReviewRail({
@@ -141,7 +147,12 @@ export default function ReviewRail({
   handleAddReply,
   currentUser,
   handleResolveComment,
+  canResolveComment,
   artifact,
+  roomRevision,
+  onRoomState,
+  onRoomRevision,
+  onAccessLost,
 }: ReviewRailProps) {
   const [activeFilters, setActiveFilters] = useState<ReadonlySet<ReviewFilterKey>>(new Set());
 
@@ -181,7 +192,9 @@ export default function ReviewRail({
       }`}
     >
       <div className="pane-right-sidebar-scroll dr-rail-scroll">
-        {artifact && <ReviewAssistant key={documentId} documentId={documentId} artifact={artifact} />}
+        {artifact && roomRevision !== null && (
+          <ReviewAssistant key={documentId} documentId={documentId} artifact={artifact} expectedRevision={roomRevision} onState={onRoomState} onRevision={onRoomRevision} onAccessLost={onAccessLost} />
+        )}
         {isAddingComment && (
           <div className="dr-rail-composer">
             <div className="dr-rail-composer-header">
@@ -386,7 +399,7 @@ export default function ReviewRail({
                                 </button>
                               </form>
 
-                              {currentUser && currentUser.role !== "viewer" && (
+                              {currentUser && canResolveComment(comment) && (
                                 <button
                                   onClick={() => handleResolveComment(comment.id)}
                                   className="dr-rail-resolve-btn"

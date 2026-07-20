@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getUsers, verifyPassword } from "../../collab/db";
+import { normalizeUsername } from "htmlcollab-app/persistence";
+import { persistenceRepository } from "@/server/persistence";
+import { verifyPassword } from "@/server/auth/password";
 
 export async function POST(request: Request) {
   try {
@@ -8,23 +10,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const users = await getUsers();
-    const user = users.find(
-      (u: any) => u.username?.toLowerCase() === username.toLowerCase()
-    );
+    const normalizedUsername = normalizeUsername(username);
+    const user = normalizedUsername ? await (await persistenceRepository()).getAccountByNormalizedUsername(normalizedUsername) : null;
 
     if (!user) {
       return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
     }
 
-    if (!verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+    if (!verifyPassword(password, user.passwordHash)) {
       return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
     }
 
     return NextResponse.json({
       success: true,
-      token: user.token,
-      user: { name: user.username, role: user.role },
+      user: { accountId: user.id, name: user.username },
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to signin" }, { status: 500 });

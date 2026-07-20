@@ -1,120 +1,48 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-import { getDocuments, saveDocuments, getDocumentRole } from "../../collab/db";
-import { testSessionFallback } from "../../collab/testAuth";
+import { normalizeUsername } from "htmlcollab-app/persistence";
+import { PersistenceCommandService, persistenceRepository } from "@/server/persistence";
+import { requireAccountSession } from "@/server/auth/session";
+
+function revision(value: unknown): number | null { return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null; }
+async function targetAccount(username: unknown) {
+  const normalized = normalizeUsername(username);
+  return normalized ? (await persistenceRepository()).getAccountByNormalizedUsername(normalized) : null;
+}
 
 export async function GET(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const documentId = new URL(request.url).searchParams.get("documentId");
+  if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
   try {
-    let session = await getServerSession(authOptions);
-    if (!session) {
-      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
-    }
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const documentId = searchParams.get("documentId");
-    if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
-
-    const docs = await getDocuments();
-    const doc = docs.find((d: any) => d.id === documentId);
-    if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
-
-    // Only members of this document may see its member list.
-    const requesterRole = await getDocumentRole(documentId, session.user.name || "");
-    if (!requesterRole) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const members = doc.members || [];
-
-    return NextResponse.json({ success: true, members });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to retrieve members" }, { status: 500 });
+    return NextResponse.json({ success: true, members: await (await persistenceRepository()).listRoomMembers(session.accountId, documentId) });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.status === 403 ? "Forbidden" : "Document not found" }, { status: error?.status ?? 404 });
   }
 }
 
 export async function PUT(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    let session = await getServerSession(authOptions);
-    if (!session) {
-      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
-    }
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const documentId = searchParams.get("documentId");
-    if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
-
-    const userRole = await getDocumentRole(documentId, session.user.name!);
-    if (userRole !== "owner") {
-      return NextResponse.json({ error: "Forbidden: Only owners can update roles" }, { status: 403 });
-    }
-
-    const { username, role } = await request.json();
-    if (!username || !role) {
-      return NextResponse.json({ error: "Missing username or role" }, { status: 400 });
-    }
-
-    const docs = await getDocuments();
-    const doc = docs.find((d: any) => d.id === documentId);
-    if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    if (!doc.members) doc.members = [];
-
-    const memberIndex = doc.members.findIndex((m: any) => m.username?.toLowerCase() === username.toLowerCase());
-    
-    if (memberIndex === -1) {
-      return NextResponse.json({ error: "User not found in document" }, { status: 404 });
-    }
-
-    doc.members[memberIndex].role = role;
-    await saveDocuments(docs);
-
-    return NextResponse.json({ success: true, message: "User role updated successfully" });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to update member role" }, { status: 500 });
-  }
+    const body = await request.json();
+    const expectedRevision = revision(body.expectedRevision);
+    const target = await targetAccount(body.username);
+    if (!body.documentId || expectedRevision === null || !target || !["viewer", "commenter", "collaborator"].includes(body.role)) return NextResponse.json({ error: "documentId, expectedRevision, existing username, and a non-owner role are required" }, { status: 400 });
+    const result = await new PersistenceCommandService(await persistenceRepository()).changeRoomRole({ accountId: session.accountId, documentId: body.documentId, expectedRevision, targetAccountId: target.id, role: body.role });
+    return result.ok ? NextResponse.json({ success: true, revision: result.state.revision }) : NextResponse.json(result, { status: 409 });
+  } catch (error: any) { return NextResponse.json({ error: error?.status === 403 ? "Forbidden" : error?.message ?? "Failed to update member" }, { status: error?.status === 403 ? 403 : 400 }); }
 }
 
 export async function DELETE(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    let session = await getServerSession(authOptions);
-    if (!session) {
-      session = testSessionFallback({ name: "Sam", role: "owner", token: "token-owner" });
-    }
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const documentId = searchParams.get("documentId");
-    if (!documentId) return NextResponse.json({ error: "Missing documentId" }, { status: 400 });
-
-    const userRole = await getDocumentRole(documentId, session.user.name!);
-    if (userRole !== "owner") {
-      return NextResponse.json({ error: "Forbidden: Only owners can remove members" }, { status: 403 });
-    }
-
-    const { username } = await request.json();
-    if (!username) {
-      return NextResponse.json({ error: "Missing username" }, { status: 400 });
-    }
-
-    const docs = await getDocuments();
-    const doc = docs.find((d: any) => d.id === documentId);
-    if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    if (!doc.members) doc.members = [];
-
-    doc.members = doc.members.filter((m: any) => m.username?.toLowerCase() !== username.toLowerCase());
-    
-    await saveDocuments(docs);
-
-    return NextResponse.json({ success: true, message: "User removed" });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to remove member" }, { status: 500 });
-  }
+    const body = await request.json();
+    const expectedRevision = revision(body.expectedRevision);
+    const target = await targetAccount(body.username);
+    if (!body.documentId || expectedRevision === null || !target) return NextResponse.json({ error: "documentId, expectedRevision, and an existing username are required" }, { status: 400 });
+    const result = await new PersistenceCommandService(await persistenceRepository()).removeRoomMember({ accountId: session.accountId, documentId: body.documentId, expectedRevision, targetAccountId: target.id });
+    return result.ok ? NextResponse.json({ success: true, revision: result.state.revision }) : NextResponse.json(result, { status: 409 });
+  } catch (error: any) { return NextResponse.json({ error: error?.status === 403 ? "Forbidden" : error?.message ?? "Failed to remove member" }, { status: error?.status === 403 ? 403 : 400 }); }
 }

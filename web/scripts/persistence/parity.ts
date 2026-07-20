@@ -21,6 +21,26 @@ const iso = (value: unknown): string | undefined => {
 const verdict = (value: unknown): string | null => value === "changes" || value === "request changes" ? "request_changes" : value === "approve" || value === "request_changes" || value === "block" ? value : null;
 const same = (actual: unknown, expected: unknown): boolean => stableJson(actual) === stableJson(expected);
 
+function canonicalPassword(passwordHash: unknown, passwordSalt: unknown): string {
+  const hash = text(passwordHash);
+  if (hash.startsWith("scrypt-v1$")) return hash;
+  return `scrypt-v1$${text(passwordSalt)}$${hash}`;
+}
+
+function commentTargetPayload(comment: ObjectValue): ObjectValue {
+  return {
+    target: object(comment.target) ?? {},
+    feedbackType: ["approve", "flag", "needs", "question"].includes(text(comment.feedbackType)) ? comment.feedbackType : null,
+    ...(typeof comment.posStart === "number" && Number.isFinite(comment.posStart) ? { posStart: comment.posStart } : {}),
+    ...(typeof comment.posEnd === "number" && Number.isFinite(comment.posEnd) ? { posEnd: comment.posEnd } : {}),
+    lastKnownContext: text(comment.lastKnownContext),
+    mentions: array(comment.mentions).filter((mention): mention is string => typeof mention === "string"),
+    resolution: object(comment.resolution)
+      ? { ...object(comment.resolution)!, resolvedBy: uuidFromSource(`account:${username(object(comment.resolution)?.resolvedBy)}`) }
+      : null,
+  };
+}
+
 async function legacyRows(client: Client): Promise<Map<string, unknown>> {
   if (!await tableExists(client, "collab_state")) throw new Error("Legacy collab_state table is missing; there is no blob source for a parity read.");
   const rows = await queryRows<LegacyRow>(client, "SELECT key, value FROM collab_state ORDER BY key");
@@ -32,11 +52,66 @@ function push(checks: Check[], name: string, actual: unknown, expected: unknown)
   checks.push({ name, pass, detail: pass ? undefined : { expected, actual } });
 }
 
+async function verifyCatalogs(client: Client, legacy: ReadonlyMap<string, unknown>, checks: Check[]): Promise<void> {
+  const expectedAccounts = array(legacy.get("users")).map(object).filter((entry): entry is ObjectValue => Boolean(entry)).map((entry) => ({
+    username: username(entry.username),
+    password: canonicalPassword(entry.passwordHash, entry.passwordSalt),
+  })).sort((a, b) => a.username.localeCompare(b.username));
+  const actualAccounts = await queryRows<{ username_normalized: string; password_hash: string; password_salt: string }>(client,
+    "SELECT username_normalized,password_hash,password_salt FROM accounts ORDER BY username_normalized");
+  push(checks, "accounts", actualAccounts.map((entry) => ({
+    username: entry.username_normalized,
+    password: canonicalPassword(entry.password_hash, entry.password_salt),
+  })), expectedAccounts);
+
+  const expectedWorkspaces = array(legacy.get("workspaces")).map(object).filter((entry): entry is ObjectValue => Boolean(entry)).map((entry) => {
+    const legacyId = text(entry.id);
+    return {
+      id: text(entry.normalizedId) || uuidFromSource(`workspace:${legacyId}`),
+      legacySourceKey: `legacy:workspace:${legacyId}`,
+      name: text(entry.name) || "Untitled workspace",
+      owner: username(entry.createdBy ?? entry.owner),
+      members: array(entry.members).map(object).filter((member): member is ObjectValue => Boolean(member)).map((member) => ({
+        username: username(member.username), role: text(member.role) === "owner" ? "owner" : "member",
+      })).sort((a, b) => a.username.localeCompare(b.username)),
+      invitations: array(entry.invitations).map(object).filter((invitation): invitation is ObjectValue => Boolean(invitation)).map((invitation) => ({
+        id: text(invitation.id), username: username(invitation.username ?? invitation.normalizedUsername),
+        status: text(invitation.status) || "pending", expiresAt: iso(invitation.expiresAt),
+      })).sort((a, b) => a.id.localeCompare(b.id)),
+    };
+  }).sort((a, b) => a.legacySourceKey.localeCompare(b.legacySourceKey));
+  const workspaceRows = await queryRows<{ id: string; legacy_source_key: string; name: string; owner: string }>(client, `
+    SELECT w.id::text,w.legacy_source_key,w.name,a.username_normalized AS owner
+    FROM workspaces w JOIN accounts a ON a.id=w.owner_account_id
+    ORDER BY w.legacy_source_key,w.id`);
+  const actualWorkspaces = [] as typeof expectedWorkspaces;
+  for (const workspace of workspaceRows) {
+    const members = await queryRows<{ username: string; role: string }>(client, `
+      SELECT a.username_normalized AS username,wm.role::text AS role
+      FROM workspace_members wm JOIN accounts a ON a.id=wm.account_id
+      WHERE wm.workspace_id=$1 ORDER BY a.username_normalized`, [workspace.id]);
+    const invitations = await queryRows<{ id: string; username: string; status: string; expires_at: unknown }>(client, `
+      SELECT wi.id::text,wi.invitee_username_normalized AS username,wi.status::text,wi.expires_at
+      FROM workspace_invitations wi
+      WHERE wi.workspace_id=$1 ORDER BY wi.id`, [workspace.id]);
+    actualWorkspaces.push({
+      id: workspace.id, legacySourceKey: workspace.legacy_source_key, name: workspace.name, owner: workspace.owner,
+      members: members.map((member) => ({ username: member.username, role: member.role === "owner" ? "owner" : "member" })),
+      invitations: invitations.map((invitation) => ({ id: invitation.id, username: invitation.username,
+        status: invitation.status, expiresAt: iso(invitation.expires_at) })),
+    });
+  }
+  push(checks, "workspaces", actualWorkspaces, expectedWorkspaces);
+
+  const documentCount = await queryRows<{ count: string }>(client, "SELECT count(*)::text AS count FROM documents");
+  push(checks, "document_count", Number(documentCount[0]?.count ?? -1), array(legacy.get("documents")).length);
+}
+
 async function verifyDocument(client: Client, sourceKey: string, document: ObjectValue, state: ObjectValue, checksum: string, checks: Check[]): Promise<void> {
   const source = (await queryRows<{ source_checksum: string; document_id: string }>(client, "SELECT source_checksum, document_id FROM migration_sources WHERE source_key = $1", [sourceKey]))[0];
   push(checks, `${sourceKey}:source_checksum`, source?.source_checksum, checksum);
   if (!source) return;
-  push(checks, `${sourceKey}:document_id`, source.document_id, uuidFromSource(sourceKey));
+  push(checks, `${sourceKey}:document_id`, source.document_id, text(document.normalizedId) || uuidFromSource(sourceKey));
   const normalizedDocument = (await queryRows<{ title: string; active_version_number: number; kind: string }>(client, "SELECT title, active_version_number, kind FROM documents WHERE id = $1", [source.document_id]))[0];
   push(checks, `${sourceKey}:title`, normalizedDocument?.title, text(document.name) || "Untitled document");
   push(checks, `${sourceKey}:active_version`, normalizedDocument?.active_version_number, Number(state.activeVersionNum) || Number(object(array(state.versions).at(-1))?.versionNumber) || 1);
@@ -106,7 +181,7 @@ async function verifyDocument(client: Client, sourceKey: string, document: Objec
     push(checks, `${sourceKey}:comment:${legacyId}:id`, actual?.id, uuidFromSource(`${sourceKey}:comment:${legacyId}`));
     push(checks, `${sourceKey}:comment:${legacyId}:version`, actual?.legacy_version_id, text(expected.versionId));
     push(checks, `${sourceKey}:comment:${legacyId}:author`, actual?.author, username(expected.author));
-    push(checks, `${sourceKey}:comment:${legacyId}:target`, actual?.target_payload, object(expected.target) ?? {});
+    push(checks, `${sourceKey}:comment:${legacyId}:target_payload`, actual?.target_payload, commentTargetPayload(expected));
     push(checks, `${sourceKey}:comment:${legacyId}:body`, actual?.body, text(expected.body) || "(legacy comment)");
     push(checks, `${sourceKey}:comment:${legacyId}:status`, { lifecycle: actual?.lifecycle, anchor: actual?.anchor_state }, { lifecycle, anchor: expectedAnchor });
     push(checks, `${sourceKey}:comment:${legacyId}:resolution_actor`, actual?.resolved_by ?? undefined, lifecycle === "resolved" ? username(resolution?.resolvedBy) : undefined);
@@ -155,6 +230,7 @@ async function verify(client: Client): Promise<{ sourceChecksum: string; checks:
   if (!await tableExists(client, "migration_sources")) throw new Error("migration_sources is missing; run db:migrate before parity verification.");
   const legacy = await legacyRows(client);
   const checks: Check[] = [];
+  await verifyCatalogs(client, legacy, checks);
   for (const rawDocument of array(legacy.get("documents"))) {
     const document = object(rawDocument);
     const id = text(document?.id);

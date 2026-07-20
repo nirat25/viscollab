@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Users, UserPlus, Loader2, Shield, Trash2 } from "lucide-react";
+import type { DocumentStateV2 } from "htmlcollab-app/persistence";
 
 interface TeamSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activeDocumentId: string;
+  activeDocumentId: string | null;
   activeWorkspaceId: string | null;
+  roomRevision: number | null;
+  onRoomState: (state: DocumentStateV2) => void;
+  onAccessLost: () => void;
 }
 
-export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, activeWorkspaceId }: TeamSettingsModalProps) {
-  const [members, setMembers] = useState<{username: string, role: string}[]>([]);
+export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, activeWorkspaceId, roomRevision, onRoomState, onAccessLost }: TeamSettingsModalProps) {
+  const [members, setMembers] = useState<{id: string, username: string, role: string}[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [inviteUsername, setInviteUsername] = useState("");
@@ -47,6 +51,11 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
   };
 
   const fetchMembers = async () => {
+    if (!activeDocumentId) {
+      setMembers([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError("");
     try {
@@ -64,29 +73,54 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
     }
   };
 
+  const command = async (commandName: string, input: Record<string, unknown>) => {
+    if (!activeDocumentId || roomRevision === null) {
+      setError("This room has not loaded yet.");
+      return false;
+    }
+    const response = await fetch("/api/collab/commands", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentId: activeDocumentId, expectedRevision: roomRevision, command: commandName, ...input }),
+    });
+    const data: unknown = await response.json().catch(() => null);
+    if (response.status === 401 || response.status === 403) {
+      onAccessLost();
+      setError("You no longer have access to this room.");
+      return false;
+    }
+    if (response.status === 409) {
+      setError("This room changed. Refresh and retry your action.");
+      return false;
+    }
+    const state = data && typeof data === "object" ? (data as { state?: unknown }).state : null;
+    if (!response.ok || !state || typeof state !== "object" || (state as { schemaVersion?: unknown }).schemaVersion !== 2) {
+      setError(data && typeof data === "object" && typeof (data as { error?: unknown }).error === "string"
+        ? (data as { error: string }).error : "Unable to update room members.");
+      return false;
+    }
+    onRoomState(state as DocumentStateV2);
+    return true;
+  };
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteUsername.trim()) return;
+    if (!inviteUsername.trim() || !activeDocumentId) return;
     
     setIsInviting(true);
     setError("");
     setSuccessMsg("");
     
     try {
-      const res = await fetch("/api/team/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: inviteUsername.trim(), role: inviteRole, documentId: activeDocumentId })
+      const ok = await command("inviteRoomMember", {
+        normalizedUsername: inviteUsername.trim().normalize("NFKC").trim().toLocaleLowerCase("en-US"),
+        role: inviteRole,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       });
-      const data = await res.json();
-      
-      if (res.ok && data.success) {
-        setSuccessMsg(data.message || "User invited successfully");
+      if (ok) {
+        setSuccessMsg("Invitation created. Access begins only after that account accepts it.");
         setInviteUsername("");
         setInviteRole("collaborator");
         await fetchMembers(); // Refresh the list
-      } else {
-        setError(data.error || "Failed to invite user");
       }
     } catch (err: any) {
       setError(err.message || "An error occurred sending the invite");
@@ -95,46 +129,25 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
     }
   };
 
-  const handleRoleChange = async (username: string, newRole: string) => {
-    const previousMembers = [...members];
-    setMembers(members.map(m => m.username === username ? { ...m, role: newRole } : m));
-    
+  const handleRoleChange = async (member: { id: string; username: string }, newRole: string) => {
+    if (!activeDocumentId) return;
     try {
-      const res = await fetch(`/api/team/members?documentId=${activeDocumentId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, role: newRole })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setMembers(previousMembers);
-        setError(data.error || "Failed to update role");
-      }
+      const ok = await command("changeRoomRole", { targetAccountId: member.id, role: newRole });
+      if (ok) await fetchMembers();
     } catch (err: any) {
-      setMembers(previousMembers);
       setError(err.message || "An error occurred updating role");
     }
   };
 
-  const handleRemoveMember = async (username: string) => {
-    const previousMembers = [...members];
-    setMembers(members.filter(m => m.username !== username));
-    
+  const handleRemoveMember = async (member: { id: string; username: string }) => {
+    if (!activeDocumentId) return;
     try {
-      const res = await fetch("/api/team/members", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setMembers(previousMembers);
-        setError(data.error || "Failed to remove user");
-      } else {
-        setSuccessMsg(data.message || "User removed");
+      const ok = await command("removeRoomMember", { targetAccountId: member.id });
+      if (ok) {
+        setSuccessMsg(`Removed ${member.username}`);
+        await fetchMembers();
       }
     } catch (err: any) {
-      setMembers(previousMembers);
       setError(err.message || "An error occurred removing user");
     }
   };
@@ -194,7 +207,6 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                   data-testid="invite-role-select"
                   className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 >
-                  <option value="owner">Owner</option>
                   <option value="collaborator">Collaborator</option>
                   <option value="commenter">Commenter</option>
                   <option value="viewer">Viewer</option>
@@ -247,16 +259,15 @@ export default function TeamSettingsModal({ isOpen, onClose, activeDocumentId, a
                       <div className="flex items-center gap-2">
                         <select
                           value={member.role}
-                          onChange={(e) => handleRoleChange(member.username, e.target.value)}
+                          onChange={(e) => handleRoleChange(member, e.target.value)}
                           className="px-2.5 py-1.5 border border-slate-200 rounded-md text-xs font-semibold capitalize bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                         >
-                          <option value="owner">Owner</option>
                           <option value="collaborator">Collaborator</option>
                           <option value="commenter">Commenter</option>
                           <option value="viewer">Viewer</option>
                         </select>
                         <button
-                          onClick={() => handleRemoveMember(member.username)}
+                          onClick={() => handleRemoveMember(member)}
                           className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
                           title="Remove user"
                         >

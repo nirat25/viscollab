@@ -26,6 +26,7 @@ export interface TopDecisionBarProps {
   verdicts: Record<string, DecisionVerdict>;
   currentUserName: string;
   onVerdictChange: (val: DecisionVerdict) => void;
+  canSetVerdict: boolean;
 }
 
 const VERDICT_LABEL: Record<Exclude<DecisionVerdict, null>, string> = {
@@ -40,6 +41,7 @@ export default function TopDecisionBar({
   verdicts,
   currentUserName,
   onVerdictChange,
+  canSetVerdict,
 }: TopDecisionBarProps) {
   return (
     <div className="dr-topbar">
@@ -67,7 +69,7 @@ export default function TopDecisionBar({
           </div>
         </div>
 
-        <label className="dr-verdict-select-wrap">
+        {canSetVerdict && <label className="dr-verdict-select-wrap">
           <span className="dr-label">Your verdict</span>
           <select
             value={verdicts[currentUserName] || ""}
@@ -82,7 +84,7 @@ export default function TopDecisionBar({
             <option value="changes">Request Changes</option>
             <option value="block">Block</option>
           </select>
-        </label>
+        </label>}
       </div>
     </div>
   );

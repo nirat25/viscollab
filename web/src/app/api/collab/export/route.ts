@@ -1,79 +1,54 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-import { getDocumentRole, getState } from "../db";
-import { testSessionFallback } from "../testAuth";
-import { canExportAgentData } from "htmlcollab-app/collab";
 import { buildDecisionRoomExport } from "htmlcollab-app/agent";
 import { validateSemanticArtifact } from "htmlcollab-app/semantic";
-import type { AccessRole, Comment } from "htmlcollab-app/collab";
-import type { SemanticArtifact } from "htmlcollab-app/semantic";
+import { PersistenceCommandService } from "@/server/persistence";
+import {
+  expectedRevision, isRecord, noStore, persistenceErrorResponse, persistenceRepository,
+  requiredString, revisionConflict, sessionAccountId,
+} from "../phase9";
 
 export const dynamic = "force-dynamic";
-
-const NO_STORE_HEADERS = {
-  "Cache-Control": "private, no-store",
-  "Content-Type": "application/json; charset=utf-8",
-  "X-Content-Type-Options": "nosniff",
-};
-
-function response(body: unknown, status = 200): NextResponse {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const REQUEST_KEYS = new Set(["documentId", "expectedRevision"]);
 
 function safeAttachmentFilename(documentId: string): string {
   return `decision-room-${documentId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100)}.json`;
 }
 
-function requestId(): string {
-  return crypto.randomUUID();
-}
-
-/** Exports an allowlisted, canonical semantic-room payload; never raw state. */
-export async function GET(request: Request) {
-  const id = requestId();
+/**
+ * Export is a material user action, so it is a POST with a revision guard.
+ * It creates only an audit record (never an agent run) after payload assembly.
+ */
+export async function POST(request: Request) {
+  const accountId = await sessionAccountId();
+  if (!accountId) return noStore({ error: "unauthorized" }, 401);
+  let body: unknown;
+  try { body = await request.json(); } catch { return noStore({ error: "invalid_request" }, 400); }
+  if (!isRecord(body) || Object.keys(body).some((key) => !REQUEST_KEYS.has(key))) return noStore({ error: "invalid_request" }, 400);
+  const documentId = requiredString(body.documentId);
+  const revision = expectedRevision(body.expectedRevision);
+  if (!documentId || revision === null) return noStore({ error: "invalid_request" }, 400);
   try {
-    const documentId = new URL(request.url).searchParams.get("documentId")?.trim() ?? "";
-    if (!documentId || documentId.length > 200) return response({ error: "Invalid request." }, 400);
-
-    let session = await getServerSession(authOptions);
-    if (!session) session = testSessionFallback();
-    if (!session?.user?.name) return response({ error: "Unauthorized." }, 401);
-
-    const documentRole = await getDocumentRole(documentId, session.user.name);
-    if (!documentRole || !canExportAgentData(documentRole as AccessRole)) {
-      return response({ error: "Forbidden." }, 403);
-    }
-
-    const state: unknown = await getState(documentId);
-    if (!isRecord(state)) return response({ error: "Decision room not found." }, 404);
-    if (!state.semanticArtifact) return response({ error: "This document is not a decision room." }, 409);
-
-    const validation = validateSemanticArtifact(state.semanticArtifact);
-    if (!validation.valid) {
-      console.error("Phase-8 export rejected invalid stored artifact", { requestId: id, category: "invalid_stored_artifact" });
-      return response({ error: "This decision room needs to be regenerated." }, 422);
-    }
-
+    const repository = await persistenceRepository();
+    const room = await repository.readRoom(accountId, documentId);
+    if (!room || !room.capabilities.includes("agent.export")) return noStore({ error: "forbidden" }, 403);
+    if (room.state.revision !== revision) return revisionConflict(room.state.revision);
+    const artifact = room.state.semanticArtifact;
+    if (!artifact) return noStore({ error: "not_a_decision_room" }, 409);
+    if (!validateSemanticArtifact(artifact).valid) return noStore({ error: "invalid_stored_artifact" }, 422);
     const exported = buildDecisionRoomExport({
-      exportedAt: new Date().toISOString(),
-      documentId,
-      artifact: state.semanticArtifact as SemanticArtifact,
-      visualPlan: state.visualPlan,
-      comments: Array.isArray(state.comments) ? state.comments as Comment[] : [],
+      exportedAt: new Date().toISOString(), documentId, artifact,
+      visualPlan: room.state.visualPlan, comments: [...room.state.comments],
     });
-    return NextResponse.json(exported, {
-      headers: {
-        ...NO_STORE_HEADERS,
-        "Content-Disposition": `attachment; filename="${safeAttachmentFilename(documentId)}"`,
-      },
+    const recorded = await new PersistenceCommandService(repository).recordSuccessfulExport({ accountId, documentId, expectedRevision: revision });
+    if (!recorded.ok) return revisionConflict(recorded.currentRevision);
+    return noStore(exported, 200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${safeAttachmentFilename(documentId)}"`,
+      "X-Content-Type-Options": "nosniff",
+      "X-Room-Revision": String(recorded.state.revision),
     });
   } catch (error) {
-    console.error("Phase-8 export handler failure", { requestId: id, category: "internal_failure" });
-    return response({ error: "Unable to export this room right now." }, 500);
+    return persistenceErrorResponse(error);
   }
 }
+
+export async function GET() { return noStore({ error: "post_required" }, 405); }

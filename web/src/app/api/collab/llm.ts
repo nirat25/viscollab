@@ -7,8 +7,9 @@
  * simulation only when no real key is present (or when we are explicitly in a
  * test / mock environment).
  *
- * Test/mock short-circuits (`PLAYWRIGHT_TEST` / `MOCK_AI`) intentionally force
- * simulation regardless of any key that happens to be set.
+ * Explicit mock mode (`MOCK_AI`) forces simulation regardless of any provider
+ * key that happens to be set. Browser tests authenticate normally and do not
+ * have a session-bypass flag.
  */
 
 // Obvious placeholder / example values that must NOT be treated as a real key.
@@ -24,8 +25,7 @@ const OPENAI_PLACEHOLDERS = new Set([
  * `LLM_PROVIDER`, and we are not in a forced-simulation (test/mock) mode.
  */
 export function hasLlmKey(): boolean {
-  // Test and mock modes always simulate — never call a real provider.
-  if (process.env["PLAYWRIGHT_TEST"] === "true") return false;
+  // Explicit mock mode always simulates — never call a real provider.
   if (process.env["MOCK_AI"] === "true") return false;
 
   // Provider defaults to anthropic (mirrors app/ getProvider()).

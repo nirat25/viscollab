@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { List, FileText, MessageSquare, LogOut, Users } from "lucide-react";
 import TeamSettingsModal from "./TeamSettingsModal";
+import type { DocumentStateV2 } from "htmlcollab-app/persistence";
 
 interface HeaderProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
-  documents: { id: string; name: string; createdAt: string }[];
-  activeDocumentId: string;
+  documents: { id: string; title: string }[];
+  activeDocumentId: string | null;
   documentVersions: { versionNumber: number; html: string; status: "Draft" | "Live"; timestamp: string }[];
   activeVersionNum: number;
   setActiveVersionNum: (num: number) => void;
@@ -16,12 +17,16 @@ interface HeaderProps {
   handleLogout: () => void;
   activeWorkspaceId: string | null;
   isSemanticRoom: boolean;
+  roomRevision: number | null;
+  onRoomState: (state: DocumentStateV2) => void;
+  onAccessLost: () => void;
 }
 
 export default function Header({
   setIsSidebarOpen, documents, activeDocumentId, documentVersions,
   activeVersionNum, setActiveVersionNum, currentUser, setIsConvertModalOpen,
-  isCommentsOpen, setIsCommentsOpen, handleLogout, activeWorkspaceId, isSemanticRoom
+  isCommentsOpen, setIsCommentsOpen, handleLogout, activeWorkspaceId, isSemanticRoom,
+  roomRevision, onRoomState, onAccessLost,
 }: HeaderProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
@@ -39,7 +44,7 @@ export default function Header({
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-bold tracking-tight font-display text-slate-900 flex items-center gap-2 truncate">
                 <FileText className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
-                <span className="truncate">{documents.find((d) => d.id === activeDocumentId)?.name || "Loading Document..."}</span>
+                <span className="truncate">{documents.find((d) => d.id === activeDocumentId)?.title || "Loading Document..."}</span>
               </h1>
               <p className="hidden sm:block text-[10px] text-indigo-600 font-semibold uppercase tracking-wider">Active Workspace Document</p>
             </div>
@@ -122,6 +127,9 @@ export default function Header({
           onClose={() => setIsTeamModalOpen(false)} 
           activeDocumentId={activeDocumentId}
           activeWorkspaceId={activeWorkspaceId}
+          roomRevision={roomRevision}
+          onRoomState={onRoomState}
+          onAccessLost={onAccessLost}
         />
       </header>
   );

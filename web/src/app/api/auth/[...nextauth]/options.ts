@@ -1,6 +1,8 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { getUsers, verifyPassword } from "../../collab/db";
+import { normalizeUsername } from "htmlcollab-app/persistence";
+import { persistenceRepository } from "@/server/persistence";
+import { verifyPassword } from "@/server/auth/password";
 
 /**
  * Resolve the NextAuth secret.
@@ -33,25 +35,23 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const users = await getUsers();
-        const user = users.find(
-          (u: any) => u.username?.toLowerCase() === credentials.username.toLowerCase()
-        );
+        const normalizedUsername = normalizeUsername(credentials.username);
+        if (!normalizedUsername) return null;
+        const user = await (await persistenceRepository()).getAccountByNormalizedUsername(normalizedUsername);
 
         if (!user) {
           return null;
         }
 
-        if (!verifyPassword(credentials.password, user.passwordSalt, user.passwordHash)) {
+        if (!verifyPassword(credentials.password, user.passwordHash)) {
           return null;
         }
 
-        // Return user object containing username (as name), role, and token
+        // Account UUID is the authorization subject. Roles are looked up for
+        // the requested resource on the server and are never held in JWTs.
         return {
-          id: user.username,
+          id: user.id,
           name: user.username,
-          role: user.role,
-          token: user.token
         };
       }
     })
@@ -59,15 +59,14 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = user.role;
-        token.token = user.token;
+        token.accountId = user.id;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role;
-        session.user.token = token.token;
+        if (typeof token.accountId !== "string") return session;
+        session.user.accountId = token.accountId;
         if (token.name) {
           session.user.name = token.name;
         }

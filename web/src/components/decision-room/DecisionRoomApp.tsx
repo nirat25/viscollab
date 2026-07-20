@@ -10,16 +10,11 @@ import { diff_match_patch } from "diff-match-patch";
 import { useSession, signOut } from "next-auth/react";
 
 import {
-  canView,
-  canComment,
-  canEdit,
-  canExportAgentData,
-  locate,
   buildCommentTarget,
   type Comment,
-  type CommentGesture,
-  type Reply
+  type CommentGesture
 } from "htmlcollab-app/collab";
+import type { Capability, DocumentStateV2 } from "htmlcollab-app/persistence";
 import type { SemanticArtifact } from "htmlcollab-app/semantic";
 import { planVisuals, type VisualPlan } from "htmlcollab-app/visual";
 import DocumentSurface, { type PendingSelection } from "../DocumentSurface";
@@ -427,11 +422,16 @@ export default function DecisionRoomApp() {
   const [mounted, setMounted] = useState(false);
 
   // Document catalog and onboarding states
-  const [documents, setDocuments] = useState<{ id: string; name: string; createdAt: string; members?: { username: string; role: string }[] }[]>([]);
+  const [documents, setDocuments] = useState<Array<{
+    id: string; workspaceId: string; title: string; kind: "legacy" | "decision_room";
+    revision: number; activeVersionNumber: number; archivedAt?: string;
+  }>>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; createdBy?: string; members: { username: string; role: string }[] }[]>([]);
-  const [activeDocumentId, setActiveDocumentId] = useState("doc-1");
+  const [workspaces, setWorkspaces] = useState<Array<{
+    id: string; name: string; ownerAccountId: string; capabilities?: readonly Capability[];
+  }>>([]);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [isCreateDocModalOpen, setIsCreateDocModalOpen] = useState(false);
   const [isWorkspaceSettingsOpen, setIsWorkspaceSettingsOpen] = useState(false);
   const [newDocName, setNewDocName] = useState("");
@@ -443,29 +443,36 @@ export default function DecisionRoomApp() {
   
   // Auth state
   const { data: session } = useSession();
-  const currentUser = session?.user ? { name: session.user.name as string, role: session.user.role as "owner" | "collaborator" | "commenter" | "viewer" } : null;
-  const authToken = session?.user?.token as string | null;
+  // Phase 9 identity comes from the signed-in immutable account ID.  Roles
+  // are deliberately not read from the session (or a document member blob):
+  // server-derived capabilities are the only client affordance input.
+  const accountId = typeof (session?.user as { accountId?: unknown } | undefined)?.accountId === "string"
+    ? (session!.user as { accountId: string }).accountId
+    : null;
+  const currentUser = accountId && session?.user?.name
+    ? { name: session.user.name, accountId }
+    : null;
+  const [capabilities, setCapabilities] = useState<readonly Capability[]>([]);
+  const [roomRevision, setRoomRevision] = useState<number | null>(null);
+  const [roomError, setRoomError] = useState("");
+  const hasCapability = React.useCallback(
+    (capability: Capability) => capabilities.includes(capability),
+    [capabilities]
+  );
+  const capabilityRole: "owner" | "collaborator" | "commenter" | "viewer" = hasCapability("version.publish") ? "owner"
+    : hasCapability("room.edit") ? "collaborator"
+      : hasCapability("comment.create") ? "commenter" : "viewer";
 
-  const activeDocument = documents.find(d => d.id === activeDocumentId);
-  const activeDocumentRole = React.useMemo(() => {
-    if (!currentUser) return "viewer";
-    if (!activeDocument || !activeDocument.members) return "viewer";
-    const member = activeDocument.members.find(m => m.username.toLowerCase() === currentUser.name.toLowerCase());
-    return (member?.role || "viewer") as "owner" | "collaborator" | "commenter" | "viewer";
-  }, [currentUser, activeDocument]);
+  const activeDocumentUser = currentUser ? { name: currentUser.name, accountId: currentUser.accountId, role: capabilityRole } : null;
 
-  const activeDocumentUser = currentUser ? { ...currentUser, role: activeDocumentRole } : null;
-
-  // Determine user's role in the active workspace (may differ from global role)
-  const activeWorkspaceMemberRole = React.useMemo(() => {
-    if (!currentUser || !activeWorkspaceId) return null;
-    const ws = workspaces.find(w => w.id === activeWorkspaceId);
-    if (!ws) return null;
-    const member = ws.members.find(m => m.username.toLowerCase() === currentUser.name.toLowerCase());
-    return member?.role ?? null;
-  }, [currentUser, activeWorkspaceId, workspaces]);
-
-  const canCreateDocInWorkspace = activeWorkspaceMemberRole !== null && ["owner", "admin"].includes(activeWorkspaceMemberRole);
+  // Workspace authority is a separate server-derived catalog projection; room
+  // capabilities never imply it. Older server projections fall back only to
+  // their explicit immutable ownerAccountId (an affordance, never a check).
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  const canCreateDocInWorkspace = Boolean(activeWorkspace && (
+    activeWorkspace.capabilities?.includes("workspace.create_document")
+    || activeWorkspace.ownerAccountId === accountId
+  ));
 
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [usernameInput, setUsernameInput] = useState("");
@@ -556,15 +563,6 @@ export default function DecisionRoomApp() {
   const [convertHtmlOption, setConvertHtmlOption] = useState<"asis" | "refine">("refine");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("vc_active_doc");
-      if (stored) {
-        setActiveDocumentId(stored);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
     if (typeof window !== "undefined" && activeDocumentId) {
       localStorage.setItem("vc_active_doc", activeDocumentId);
     }
@@ -579,8 +577,21 @@ export default function DecisionRoomApp() {
     try {
       const res = await fetch(`/api/collab/documents?workspaceId=${workspaceId}`);
       const data = await res.json();
-      if (data.success && data.documents) {
-        setDocuments(data.documents);
+      if (data.success && Array.isArray(data.documents)) {
+        const catalog = data.documents as Array<{
+          id: string; workspaceId: string; title: string; kind: "legacy" | "decision_room";
+          revision: number; activeVersionNumber: number; archivedAt?: string;
+        }>;
+        setDocuments(catalog);
+        // A local selection is a convenience only. Validate it against the
+        // account-scoped catalog before reading a room; never fetch doc-1 or a
+        // stale/revoked ID merely because it is in localStorage.
+        const stored = typeof window === "undefined" ? null : localStorage.getItem("vc_active_doc");
+        setActiveDocumentId((previous) => {
+          const desired = previous ?? stored;
+          if (desired && catalog.some((document) => document.id === desired)) return desired;
+          return catalog[0]?.id ?? null;
+        });
         setDocumentsLoaded(true);
       }
     } catch (e) {
@@ -602,26 +613,65 @@ export default function DecisionRoomApp() {
 
   const [lockedSections, setLockedSections] = useState<string[]>([]);
 
+  const clearRoomState = React.useCallback(() => {
+    setDocumentVersions([]);
+    setComments([]);
+    setVerdicts({});
+    setSemanticArtifact(undefined);
+    setVisualPlan(undefined);
+    setLockedSections([]);
+    setCapabilities([]);
+    setRoomRevision(null);
+  }, []);
+
+  const applyRoomState = React.useCallback((state: DocumentStateV2) => {
+    setDocumentVersions(state.versions.map((version) => ({
+      versionNumber: version.versionNumber,
+      html: version.html,
+      status: version.status,
+      timestamp: version.createdAt,
+    })));
+    setActiveVersionNum(state.activeVersionNumber);
+    setComments([...state.comments]);
+    setVerdicts(Object.fromEntries(state.verdicts.map((item) => [
+      item.accountId === currentUser?.accountId ? currentUser.name : item.accountId,
+      item.verdict,
+    ])));
+    // Phase 9 locks the source/version, not individual arbitrary DOM blocks.
+    // The legacy section toolbar remains visually read-only after a lock via
+    // the source-lock command path below.
+    setLockedSections(state.versions.find((version) => version.versionNumber === state.activeVersionNumber)?.lockedAt
+      ? ["__source_locked__"]
+      : []);
+    setSemanticArtifact(state.semanticArtifact);
+    setVisualPlan(state.visualPlan);
+    setCapabilities([...state.capabilities]);
+    setRoomRevision(state.revision);
+    setRoomError("");
+    setSandboxSectionId(null);
+    setSandboxSimulatedHtml(null);
+    setSandboxDiffHtml(null);
+  }, [currentUser]);
+
   const loadDocumentState = async (docId: string) => {
     try {
       const res = await fetch(`/api/collab?documentId=${docId}`);
-      const data = await res.json();
-      if (data.versions) setDocumentVersions(data.versions);
-      if (data.activeVersionNum) setActiveVersionNum(data.activeVersionNum);
-      if (data.comments) setComments(data.comments);
-      if (data.verdicts) setVerdicts(data.verdicts);
-      if (data.lockedSections) setLockedSections(data.lockedSections);
-      // Always set (not gated by truthiness): switching from a semantic doc to
-      // a legacy doc (or vice versa) must clear/replace stale semantic state,
-      // otherwise the previous document's artifact would leak into the router
-      // decision for the newly-active document.
-      setSemanticArtifact(data.semanticArtifact ?? undefined);
-      setVisualPlan(data.visualPlan ?? undefined);
-      setSandboxSectionId(null);
-      setSandboxSimulatedHtml(null);
-      setSandboxDiffHtml(null);
+      const data: unknown = await res.json();
+      if (res.status === 401 || res.status === 403) {
+        clearRoomState();
+        setRoomError("You no longer have access to this room.");
+        return false;
+      }
+      if (!res.ok || !data || typeof data !== "object" || (data as { schemaVersion?: unknown }).schemaVersion !== 2) {
+        setRoomError("Unable to load this room right now.");
+        return false;
+      }
+      applyRoomState(data as DocumentStateV2);
+      return true;
     } catch (err) {
       console.error("Failed to load state for document", docId, err);
+      setRoomError("Unable to load this room right now.");
+      return false;
     }
   };
 
@@ -630,28 +680,28 @@ export default function DecisionRoomApp() {
   };
 
   useEffect(() => {
-    if (mounted && authToken && currentUser) {
+    if (mounted && accountId && currentUser) {
       const tourCompleted = localStorage.getItem("onboarding_tour_completed");
       if (!tourCompleted) {
         startTour();
       }
     }
-  }, [mounted, authToken, currentUser]);
+  }, [mounted, accountId, currentUser]);
 
   useEffect(() => {
-    if (authToken) {
+    if (accountId) {
       fetchWorkspaces();
     }
-    if (authToken && activeWorkspaceId) {
+    if (accountId && activeWorkspaceId) {
       setDocumentsLoaded(false);
       fetchDocuments(activeWorkspaceId);
     }
-  }, [authToken, activeWorkspaceId]);
+  }, [accountId, activeWorkspaceId]);
 
   useEffect(() => {
-    if (!mounted || !authToken) return;
+    if (!mounted || !accountId || !activeDocumentId) return;
     loadDocumentState(activeDocumentId);
-  }, [activeDocumentId, mounted, authToken]);
+  }, [activeDocumentId, mounted, accountId]);
 
   useEffect(() => {
     let timer1: NodeJS.Timeout;
@@ -855,28 +905,53 @@ export default function DecisionRoomApp() {
     }
   };
 
-  // Sync state helper
-  const syncState = async (
-    newVersions: typeof documentVersions,
-    newActiveVersionNum: number,
-    newComments: typeof comments,
-    newVerdicts: typeof verdicts
-  ) => {
+  /**
+   * The only room mutation path.  It intentionally never carries a room
+   * collection from the browser; the server derives all IDs, authorship,
+   * history and timestamps, then returns the replacement projection.
+   */
+  const runRoomCommand = async (command: string, input: Record<string, unknown>) => {
+    if (roomRevision === null) {
+      setRoomError("This room has not loaded yet. Please try again.");
+      return null;
+    }
     try {
-      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
+      const response = await fetch("/api/collab/commands", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          versions: newVersions,
-          activeVersionNum: newActiveVersionNum,
-          comments: newComments,
-          verdicts: newVerdicts,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: activeDocumentId, command, expectedRevision: roomRevision, ...input }),
       });
-    } catch (e) {
-      console.error("Failed to sync state to server", e);
+      const payload: unknown = await response.json().catch(() => null);
+      if (response.status === 401 || response.status === 403) {
+        clearRoomState();
+        setRoomError("You no longer have access to this room.");
+        return null;
+      }
+      if (response.status === 409 && payload && typeof payload === "object" && (payload as { code?: unknown }).code === "revision_conflict") {
+        // Do not overwrite another member's work. Refresh the authoritative
+        // state; the user can retry their narrow action against that revision.
+        if (activeDocumentId) await loadDocumentState(activeDocumentId);
+        setRoomError("This room changed. It was refreshed; please retry your action.");
+        return null;
+      }
+      if (!response.ok || !payload || typeof payload !== "object") {
+        const message = payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : "Unable to save that change.";
+        setRoomError(message);
+        return null;
+      }
+      const state = (payload as { state?: unknown }).state;
+      if (!state || typeof state !== "object" || (state as { schemaVersion?: unknown }).schemaVersion !== 2) {
+        setRoomError("The server did not return an updated room.");
+        return null;
+      }
+      applyRoomState(state as DocumentStateV2);
+      return payload as { state: DocumentStateV2; value?: unknown; revision: number };
+    } catch (error) {
+      console.error("Failed to run room command", error);
+      setRoomError("Unable to save that change.");
+      return null;
     }
   };
 
@@ -895,10 +970,10 @@ export default function DecisionRoomApp() {
   // Latest mutable values are read through a ref so the interval doesn't need to
   // be torn down and recreated on every state change (which previously caused a
   // near-constant re-subscribe + re-render storm).
-  const pollSnapshotRef = useRef({ documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan });
+  const pollSnapshotRef = useRef({ roomRevision });
   useEffect(() => {
-    pollSnapshotRef.current = { documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan };
-  }, [documentVersions, activeVersionNum, comments, verdicts, semanticArtifact, visualPlan]);
+    pollSnapshotRef.current = { roomRevision };
+  }, [roomRevision]);
 
   const pollPausedRef = useRef(false);
   useEffect(() => {
@@ -906,7 +981,7 @@ export default function DecisionRoomApp() {
   }, [sandboxSectionId, isAddingComment]);
 
   useEffect(() => {
-    if (!mounted || !authToken || !activeDocumentId) return;
+    if (!mounted || !accountId || !activeDocumentId) return;
 
     let isSubscribed = true;
     const interval = setInterval(() => {
@@ -914,34 +989,17 @@ export default function DecisionRoomApp() {
       if (pollPausedRef.current) return;
 
       fetch(`/api/collab?documentId=${activeDocumentId}`)
-        .then((res) => res.json())
-        .then((data) => {
+        .then(async (res) => ({ res, data: await res.json() as unknown }))
+        .then(({ res, data }) => {
           if (!isSubscribed || pollPausedRef.current) return;
-          const snap = pollSnapshotRef.current;
-          if (data.versions && JSON.stringify(data.versions) !== JSON.stringify(snap.documentVersions)) {
-            setDocumentVersions(data.versions);
+          if (res.status === 401 || res.status === 403) {
+            clearRoomState();
+            setRoomError("You no longer have access to this room.");
+            return;
           }
-          if (data.activeVersionNum !== undefined && data.activeVersionNum !== snap.activeVersionNum) {
-            setActiveVersionNum(data.activeVersionNum);
-          }
-          if (data.comments && JSON.stringify(data.comments) !== JSON.stringify(snap.comments)) {
-            setComments(data.comments);
-          }
-          if (data.verdicts && JSON.stringify(data.verdicts) !== JSON.stringify(snap.verdicts)) {
-            setVerdicts(data.verdicts);
-          }
-          if (
-            data.semanticArtifact !== undefined &&
-            JSON.stringify(data.semanticArtifact) !== JSON.stringify(snap.semanticArtifact)
-          ) {
-            setSemanticArtifact(data.semanticArtifact);
-          }
-          if (
-            data.visualPlan !== undefined &&
-            JSON.stringify(data.visualPlan) !== JSON.stringify(snap.visualPlan)
-          ) {
-            setVisualPlan(data.visualPlan);
-          }
+          if (!res.ok || !data || typeof data !== "object" || (data as { schemaVersion?: unknown }).schemaVersion !== 2) return;
+          const next = data as DocumentStateV2;
+          if (next.revision !== pollSnapshotRef.current.roomRevision) applyRoomState(next);
         })
         .catch((err) => {
           console.error("Error polling state from server", err);
@@ -952,7 +1010,7 @@ export default function DecisionRoomApp() {
       isSubscribed = false;
       clearInterval(interval);
     };
-  }, [mounted, authToken, activeDocumentId]);
+  }, [mounted, accountId, activeDocumentId, applyRoomState, clearRoomState]);
 
   const handleLogout = () => {
     signOut({ redirect: false });
@@ -973,7 +1031,9 @@ export default function DecisionRoomApp() {
 
 
   // Document version changes
-  const currentVersion = documentVersions.find(v => v.versionNumber === activeVersionNum) || documentVersions[documentVersions.length - 1]!;
+  const currentVersion = documentVersions.find(v => v.versionNumber === activeVersionNum)
+    || documentVersions[documentVersions.length - 1]
+    || { versionNumber: 0, html: "", status: "Draft" as const, timestamp: new Date(0).toISOString() };
 
   // Dynamic section and header parsing using DOMParser on client
   const sectionsMetadata = React.useMemo(() => {
@@ -1028,14 +1088,14 @@ export default function DecisionRoomApp() {
   // composer pre-filled. (Hover, highlighting, and selection geometry all live
   // inside DocumentSurface now — no per-mousemove React state in the parent.)
   const handleCommentSelection = React.useCallback((sel: PendingSelection) => {
-    if (!currentUser || !canComment(activeDocumentRole)) return;
+    if (!currentUser || !hasCapability("comment.create")) return;
     setPendingSemanticAnchor(null);
     setSelectedText(sel.quote);
     setSelectedRange({ quote: sel.quote, prefix: sel.prefix, suffix: sel.suffix });
     setCommentTargetSection(sel.sectionId);
     setIsAddingComment(true);
     setIsCommentsOpen(true);
-  }, [currentUser, activeDocumentRole]);
+  }, [currentUser, hasCapability]);
 
   // Whole-section comment via the hover toolbar button.
   const handleCommentSection = React.useCallback((sectionId: string) => {
@@ -1051,7 +1111,7 @@ export default function DecisionRoomApp() {
   // fires this when a decision-room node has no existing comment yet.
   const handleStartSemanticComment = React.useCallback(
     (gesture: NonNullable<CommentGesture["semantic"]>) => {
-      if (!currentUser || !canComment(activeDocumentRole)) return;
+      if (!currentUser || !hasCapability("comment.create")) return;
       setSelectedText("");
       setSelectedRange(null);
       setCommentTargetSection("");
@@ -1059,21 +1119,13 @@ export default function DecisionRoomApp() {
       setIsAddingComment(true);
       setIsCommentsOpen(true);
     },
-    [currentUser, activeDocumentRole]
+    [currentUser, hasCapability]
   );
 
   // Add Comment Submission
-  const handleAddComment = (e: React.FormEvent) => {
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim() || !currentUser) return;
-
-    const id = "c" + Math.random().toString(36).substring(2, 9);
-    const mentions: string[] = [];
-    const regex = /@(\w+)/g;
-    let match;
-    while ((match = regex.exec(commentText)) !== null) {
-      if (match[1]) mentions.push(match[1]);
-    }
 
     // COLLAB-002: the gesture that opened the composer decides the anchor
     // type (semantic > text > section precedence) via the pure builder.
@@ -1083,30 +1135,12 @@ export default function DecisionRoomApp() {
       section: commentTargetSection ? { id: commentTargetSection } : undefined,
     });
 
-    const newComment: Comment = {
-      id,
-      versionId: `v${activeVersionNum}`,
-      author: currentUser.name,
+    const result = await runRoomCommand("createComment", {
       body: commentText,
-      createdAt: Date.now(),
-      feedbackType: commentFeedbackType,
-      lifecycle: "open",
-      anchorStatus: "anchored",
       target,
-      lastKnownContext: pendingSemanticAnchor
-        ? (pendingSemanticAnchor.nodeLabel ?? pendingSemanticAnchor.semanticNodeId)
-        : (selectedText || "Entire section comment"),
-      resolution: null,
-      replies: [],
-      mentions,
-      history: [{ event: "created", who: currentUser.name, when: Date.now() }]
-    };
-
-    const newComments = [...comments, newComment];
-    setComments(newComments);
-
-    // Sync to server
-    syncState(documentVersions, activeVersionNum, newComments, verdicts);
+      feedbackType: commentFeedbackType,
+    });
+    if (!result) return;
 
     // Clear forms
     setCommentText("");
@@ -1116,36 +1150,17 @@ export default function DecisionRoomApp() {
     setPendingSemanticAnchor(null);
     // Switch to threads tab to show it
     setActiveTab("threads");
-    setSelectedCommentId(id);
+    const created = result.value as Comment | undefined;
+    setSelectedCommentId(created?.id ?? null);
   };
 
   // Add Reply Submission
-  const handleAddReply = (e: React.FormEvent, commentId: string) => {
+  const handleAddReply = async (e: React.FormEvent, commentId: string) => {
     e.preventDefault();
     const draft = (replyDrafts[commentId] || "").trim();
     if (!draft || !currentUser) return;
-
-    const updatedComments = comments.map(c => {
-      if (c.id === commentId) {
-        const replyId = "r" + Math.random().toString(36).substring(2, 9);
-        const newReply: Reply = {
-          id: replyId,
-          author: currentUser.name,
-          body: draft,
-          mentions: [],
-          ts: Date.now()
-        };
-        return {
-          ...c,
-          replies: [...c.replies, newReply],
-          history: [...c.history, { event: `replied by ${currentUser.name}`, who: currentUser.name, when: Date.now() }]
-        };
-      }
-      return c;
-    });
-
-    setComments(updatedComments);
-    syncState(documentVersions, activeVersionNum, updatedComments, verdicts);
+    const result = await runRoomCommand("replyToComment", { threadId: commentId, body: draft });
+    if (!result) return;
     setReplyDrafts(prev => ({ ...prev, [commentId]: "" }));
   };
 
@@ -1156,34 +1171,16 @@ export default function DecisionRoomApp() {
   // app's resolveComment(id, changeLink?, versionNumber?) (this is the LIVE
   // path; DecisionRoomApp's handler is hand-rolled, not a call to that fn —
   // see brief §1 "Surprise / constraint worth flagging").
-  const handleResolveComment = (commentId: string) => {
-    if (!currentUser) return;
-    const updatedComments = comments.map(c => {
-      if (c.id === commentId) {
-        const resolving = c.lifecycle === "open";
-        const resolution = resolving ? {
-          resolvedBy: currentUser.name,
-          resolvedAt: Date.now(),
-          resolvedInVersion: activeVersionNum,
-          ...(c.target.type === "semantic" ? { semanticNodeId: c.target.semanticNodeId } : {})
-        } : null;
-        const eventName = resolving ? `resolved (no change) in v${activeVersionNum}` : "reopened";
-        return {
-          ...c,
-          lifecycle: resolving ? "resolved" : "open" as any,
-          resolution,
-          history: [...c.history, {
-            event: eventName,
-            who: currentUser.name,
-            when: Date.now()
-          }]
-        };
-      }
-      return c;
-    });
-    setComments(updatedComments);
-    syncState(documentVersions, activeVersionNum, updatedComments, verdicts);
+  const handleResolveComment = async (commentId: string) => {
+    const comment = comments.find((item) => item.id === commentId);
+    if (!comment) return;
+    await runRoomCommand(comment.lifecycle === "open" ? "resolveComment" : "reopenComment", { threadId: commentId });
   };
+  const canResolveComment = React.useCallback((comment: Comment) => Boolean(
+    currentUser
+    && hasCapability("comment.resolve")
+    && (hasCapability("room.edit") || comment.author === currentUser.accountId)
+  ), [currentUser, hasCapability]);
 
   // AI Surgical Edit Simulation
   const handleOpenAiEdit = (sectionId: string) => {
@@ -1276,7 +1273,7 @@ export default function DecisionRoomApp() {
     }
   };
 
-  const handleCommitAiEdit = () => {
+  const handleCommitAiEdit = async () => {
     if (!sandboxSectionId || !sandboxSimulatedHtml || !currentUser) return;
 
     // Replace the section HTML in the main document
@@ -1293,110 +1290,35 @@ export default function DecisionRoomApp() {
     }
 
     const updatedHtml = doc.body.innerHTML;
-    const nextVersionNum = documentVersions.length + 1;
-
-    // Create a new version
-    const newVersion = {
-      versionNumber: nextVersionNum,
-      html: updatedHtml,
-      status: "Draft" as const,
-      timestamp: new Date().toISOString()
-    };
-
-    const newVersions = [...documentVersions, newVersion];
-    setDocumentVersions(newVersions);
-    setActiveVersionNum(nextVersionNum);
-
-    // Re-anchor active comments using the locate() tool from htmlcollab-app
-    const containerDiv = document.createElement("div");
-    containerDiv.innerHTML = updatedHtml;
-    
-    const updatedComments = comments.map(c => {
-      if (c.lifecycle === "resolved") return c;
-      // ORCHESTRATOR AMENDMENT (rebuild-architecture-phase7.md §2/§11 step 6):
-      // semantic-target comments never resolve against the HTML DOM (locate()
-      // returns { status: 'orphaned' } for them by design — see comments.ts).
-      // An HTML edit cannot move a semantic anchor, so leave these untouched
-      // instead of persisting that ephemeral orphaned status onto the comment.
-      if (c.target.type === "semantic") return c;
-      const locateResult = locate(containerDiv, c);
-      
-      // Update history record
-      const hasReanchored = locateResult.status !== c.anchorStatus;
-      const historyUpdate = hasReanchored 
-        ? [{ event: `re-anchored to status: ${locateResult.status} due to v${nextVersionNum} edit`, who: "System", when: Date.now() }]
-        : [];
-
-      return {
-        ...c,
-        anchorStatus: locateResult.status,
-        posStart: locateResult.status !== "orphaned" ? locateResult.start : undefined,
-        posEnd: locateResult.status !== "orphaned" ? locateResult.end : undefined,
-        lastKnownContext: locateResult.newText || locateResult.newSnippet || c.lastKnownContext,
-        history: [...c.history, ...historyUpdate]
-      };
-    });
-
-    setComments(updatedComments);
-    setSandboxSectionId(null);
-    syncState(newVersions, nextVersionNum, updatedComments, verdicts);
+    // The command service creates the immutable version and derives all
+    // lifecycle/history state. The browser never re-anchors or writes a
+    // comment collection itself.
+    const result = await runRoomCommand("createVersion", { html: updatedHtml });
+    if (result) setSandboxSectionId(null);
   };
 
   // Document Verdict Change
   const handleToggleSectionLock = async (sectionId: string) => {
-    const isLocked = lockedSections.includes(sectionId);
-    const updatedLocks = isLocked 
-      ? lockedSections.filter(id => id !== sectionId)
-      : [...lockedSections, sectionId];
-
-    setLockedSections(updatedLocks);
-
-    try {
-      await fetch(`/api/collab?documentId=${activeDocumentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lockedSections: updatedLocks })
-      });
-    } catch (err) {
-      console.error("Failed to save locked sections", err);
-    }
+    // Source locking is document-version scoped in Phase 9. `sectionId` is a
+    // legacy toolbar argument and intentionally is not sent to the server.
+    void sectionId;
+    const currentlyLocked = lockedSections.includes("__source_locked__");
+    await runRoomCommand("lockSource", { locked: !currentlyLocked });
   };
 
-  const handleVerdictChange = (val: "approve" | "changes" | "block" | null) => {
-    if (!currentUser) return;
-    const newVerdicts = {
-      ...verdicts,
-      [currentUser.name]: val
-    };
-    setVerdicts(newVerdicts);
-    syncState(documentVersions, activeVersionNum, comments, newVerdicts);
+  const handleVerdictChange = async (val: "approve" | "changes" | "block" | null) => {
+    if (!currentUser || !hasCapability("verdict.set_self")) return;
+    await runRoomCommand("setOwnVerdict", { verdict: val });
   };
 
   // Promoting version to Live status
-  const handlePromoteToLive = () => {
-    const updatedVersions = documentVersions.map(v => {
-      if (v.versionNumber === activeVersionNum) {
-        return { ...v, status: "Live" as const };
-      }
-      return v;
-    });
-    setDocumentVersions(updatedVersions);
-    syncState(updatedVersions, activeVersionNum, comments, verdicts);
+  const handlePromoteToLive = async () => {
+    await runRoomCommand("publishVersion", { versionNumber: activeVersionNum });
   };
 
   // Creating new draft from Live
-  const handleCreateNewDraft = () => {
-    const nextVersionNum = documentVersions.length + 1;
-    const newVersion = {
-      versionNumber: nextVersionNum,
-      html: currentVersion.html,
-      status: "Draft" as const,
-      timestamp: new Date().toISOString()
-    };
-    const newVersions = [...documentVersions, newVersion];
-    setDocumentVersions(newVersions);
-    setActiveVersionNum(nextVersionNum);
-    syncState(newVersions, nextVersionNum, comments, verdicts);
+  const handleCreateNewDraft = async () => {
+    await runRoomCommand("createVersion", { html: currentVersion.html });
   };
 
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -1409,12 +1331,13 @@ export default function DecisionRoomApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentId: activeDocumentId,
-          lockedIds: lockedSections
+          lockedIds: lockedSections,
+          expectedRevision: roomRevision,
         })
       });
       const data = await res.json();
-      if (data.success) {
-        await loadDocumentState(activeDocumentId);
+      if (data.success && typeof data.html === "string") {
+        await runRoomCommand("regenerateVersion", { generatedHtml: data.html });
       } else {
         alert("Failed to regenerate: " + data.error);
       }
@@ -1476,7 +1399,7 @@ export default function DecisionRoomApp() {
     // The layout (and thus roomRootRef.current) exists only past the mounted +
     // auth gates below; the hook's binding effects re-run when this flips
     // (Opus review B1 — a bare ref object never re-triggers an effect).
-    enabled: mounted && !!authToken && !!currentUser,
+    enabled: mounted && !!accountId && !!currentUser && hasCapability("room.read"),
     comments,
     artifact: semanticArtifact,
     onSelectComment: handleSelectComment,
@@ -1494,7 +1417,7 @@ export default function DecisionRoomApp() {
       </div>
     );
   }  // 1. Auth Lock Screen
-  if (!authToken || !currentUser) {
+  if (!accountId || !currentUser) {
     return (
       <AuthScreen />
     );
@@ -1507,11 +1430,12 @@ export default function DecisionRoomApp() {
   // unchanged from the pre-decomposition version; only the JSX shell moved
   // into presentational sub-components.
 
+  const selectedDocumentId = activeDocumentId ?? "";
   const legacyDocumentSurface = (
     <div ref={previewContainerRef} className="pane-preview-body">
       {currentVersion.html.includes("id=") ? (
         <DocumentSurface
-          docId={activeDocumentId}
+          docId={selectedDocumentId}
           versionNumber={activeVersionNum}
           html={currentVersion.html}
           isDraft={currentVersion.status === "Draft"}
@@ -1519,8 +1443,8 @@ export default function DecisionRoomApp() {
           sectionsMetadata={sectionsMetadata}
           sectionIds={sectionIds}
           selectedCommentId={selectedCommentId}
-          canEdit={canEdit(activeDocumentRole)}
-          canComment={canComment(activeDocumentRole)}
+          canEdit={hasCapability("room.edit")}
+          canComment={hasCapability("comment.create")}
           previewContainerRef={previewContainerRef}
           onSelectComment={handleSelectComment}
           onOpenAiEdit={handleOpenAiEdit}
@@ -1543,7 +1467,7 @@ export default function DecisionRoomApp() {
       <div className="dr-canvas-topline-left">
         <FileText className="dr-canvas-topline-icon" />
         <span className="dr-canvas-topline-name">
-          {documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview"}
+          {documents.find((d) => d.id === activeDocumentId)?.title || "Document Preview"}
         </span>
         <span
           className={`dr-canvas-status-badge ${
@@ -1554,13 +1478,19 @@ export default function DecisionRoomApp() {
         </span>
       </div>
 
-      {canEdit(activeDocumentRole) && currentVersion.status !== "Draft" && (
+      {hasCapability("version.create") && currentVersion.status !== "Draft" && (
         <button onClick={handleCreateNewDraft} className="dr-canvas-topline-btn">
           Create New Draft
         </button>
       )}
-      {semanticArtifact && canExportAgentData(activeDocumentRole) && (
-        <DecisionRoomExportButton documentId={activeDocumentId} />
+      {semanticArtifact && hasCapability("agent.export") && roomRevision !== null && (
+        <DecisionRoomExportButton
+          documentId={selectedDocumentId}
+          expectedRevision={roomRevision}
+          onState={applyRoomState}
+          onRevision={setRoomRevision}
+          onAccessLost={() => { clearRoomState(); setRoomError("You no longer have access to this room."); }}
+        />
       )}
     </div>
   );
@@ -1601,13 +1531,17 @@ export default function DecisionRoomApp() {
         handleLogout={handleLogout}
         activeWorkspaceId={activeWorkspaceId}
         isSemanticRoom={Boolean(semanticArtifact)}
+        roomRevision={roomRevision}
+        onRoomState={applyRoomState}
+        onAccessLost={() => { clearRoomState(); setRoomError("You no longer have access to this room."); }}
       />
       <TopDecisionBar
-        title={semanticArtifact ? semanticArtifact.title : (documents.find((d) => d.id === activeDocumentId)?.name || "Document Preview")}
+        title={semanticArtifact ? semanticArtifact.title : (documents.find((d) => d.id === activeDocumentId)?.title || "Document Preview")}
         bluf={semanticArtifact?.bluf}
         verdicts={verdicts}
         currentUserName={currentUser.name}
         onVerdictChange={handleVerdictChange}
+        canSetVerdict={hasCapability("verdict.set_self")}
       />
     </>
   );
@@ -1624,7 +1558,7 @@ export default function DecisionRoomApp() {
       onSelectDocument={handleSelectDocument}
       canCreateDoc={canCreateDocInWorkspace}
       onOpenConvertModal={() => setIsConvertModalOpen(true)}
-      currentUser={currentUser}
+      currentUser={activeDocumentUser}
       onLogout={handleLogout}
       onRestartTour={handleRestartTour}
     />
@@ -1635,7 +1569,7 @@ export default function DecisionRoomApp() {
   const reviewRailContent = isCommentsOpen ? (
     semanticArtifact ? (
       <ReviewRail
-        documentId={activeDocumentId}
+        documentId={selectedDocumentId}
         tourStep={tourStep}
         isAddingComment={isAddingComment}
         setIsAddingComment={setIsAddingComment}
@@ -1654,7 +1588,12 @@ export default function DecisionRoomApp() {
         handleAddReply={handleAddReply}
         currentUser={activeDocumentUser}
         handleResolveComment={handleResolveComment}
+        canResolveComment={canResolveComment}
         artifact={semanticArtifact}
+        roomRevision={roomRevision}
+        onRoomState={applyRoomState}
+        onRoomRevision={setRoomRevision}
+        onAccessLost={() => { clearRoomState(); setRoomError("You no longer have access to this room."); }}
       />
     ) : (
       <CommentSidebar
@@ -1675,6 +1614,7 @@ export default function DecisionRoomApp() {
         handleAddReply={handleAddReply}
         currentUser={activeDocumentUser}
         handleResolveComment={handleResolveComment}
+        canResolveComment={canResolveComment}
       />
     )
   ) : null;

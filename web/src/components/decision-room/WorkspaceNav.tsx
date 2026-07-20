@@ -19,9 +19,7 @@ import "@/app/decision-room.css";
 
 export interface WorkspaceNavDocument {
   id: string;
-  name: string;
-  createdAt: string;
-  members?: { username: string; role: string }[];
+  title: string;
 }
 
 export interface WorkspaceNavProps {
@@ -31,7 +29,7 @@ export interface WorkspaceNavProps {
   searchTerm: string;
   onSearchTermChange: (value: string) => void;
   documents: WorkspaceNavDocument[];
-  activeDocumentId: string;
+  activeDocumentId: string | null;
   onSelectDocument: (id: string) => void;
   canCreateDoc: boolean;
   onOpenConvertModal: () => void;
@@ -56,7 +54,7 @@ export default function WorkspaceNav({
   onRestartTour,
 }: WorkspaceNavProps) {
   const filteredDocuments = documents.filter((doc) =>
-    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+    doc.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -112,7 +110,7 @@ export default function WorkspaceNav({
                 className={`dr-nav-doc-row ${isActive ? "dr-nav-doc-row-active" : ""}`}
               >
                 <FileText size={15} />
-                <span className="dr-nav-doc-name">{doc.name}</span>
+                <span className="dr-nav-doc-name">{doc.title}</span>
               </button>
             );
           })}

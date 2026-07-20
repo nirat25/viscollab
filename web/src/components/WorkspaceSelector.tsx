@@ -5,8 +5,8 @@ import { useSession } from "next-auth/react";
 interface Workspace {
   id: string;
   name: string;
-  createdBy?: string;
-  members: { username: string; role: string }[];
+  ownerAccountId: string;
+  capabilities?: readonly string[];
 }
 
 interface WorkspaceSelectorProps {
@@ -17,7 +17,8 @@ interface WorkspaceSelectorProps {
 
 export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace, onOpenSettings }: WorkspaceSelectorProps) {
   const { data: session } = useSession();
-  const currentUsername = (session?.user as any)?.name ?? "";
+  const accountId = typeof (session?.user as { accountId?: unknown } | undefined)?.accountId === "string"
+    ? (session!.user as { accountId: string }).accountId : null;
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -25,8 +26,8 @@ export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
 
   useEffect(() => {
-    if (currentUsername) fetchWorkspaces();
-  }, [currentUsername]);
+    if (accountId) fetchWorkspaces();
+  }, [accountId]);
 
   const fetchWorkspaces = async () => {
     try {
@@ -65,24 +66,14 @@ export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace
     }
   };
 
-  const getUserRoleInWorkspace = (ws: Workspace): string => {
-    if (!currentUsername) return "viewer";
-    const member = ws.members.find(
-      (m) => m.username.toLowerCase() === currentUsername.toLowerCase()
-    );
-    return member?.role ?? "viewer";
-  };
+  const isOwner = (ws: Workspace) => ws.ownerAccountId === accountId;
 
-  const isOwnerOrAdmin = (role: string) => ["owner", "admin"].includes(role);
-
-  const myWorkspaces = workspaces.filter((ws) => isOwnerOrAdmin(getUserRoleInWorkspace(ws)));
-  const invitedWorkspaces = workspaces.filter((ws) => !isOwnerOrAdmin(getUserRoleInWorkspace(ws)));
+  const myWorkspaces = workspaces.filter(isOwner);
+  const invitedWorkspaces = workspaces.filter((ws) => !isOwner(ws));
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const activeRole = activeWorkspace ? getUserRoleInWorkspace(activeWorkspace) : null;
 
   const WorkspaceButton = ({ ws }: { ws: Workspace }) => {
-    const role = getUserRoleInWorkspace(ws);
     const isActive = activeWorkspaceId === ws.id;
     return (
       <button
@@ -97,7 +88,7 @@ export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace
       >
         <Folder className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate flex-1">{ws.name}</span>
-        {isOwnerOrAdmin(role) && (
+        {isOwner(ws) && (
           <Crown className={`h-3 w-3 shrink-0 ${isActive ? "text-indigo-200" : "text-amber-400 opacity-70"}`} />
         )}
       </button>
@@ -116,9 +107,7 @@ export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace
             <span className="text-sm font-semibold text-slate-200 truncate block">
               {activeWorkspace ? activeWorkspace.name : "Select Workspace"}
             </span>
-            {activeRole && (
-              <span className="text-[10px] text-slate-500 capitalize">{activeRole}</span>
-            )}
+            {activeWorkspace && <span className="text-[10px] text-slate-500">Workspace</span>}
           </div>
         </div>
         <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -198,7 +187,7 @@ export default function WorkspaceSelector({ activeWorkspaceId, onSelectWorkspace
                 </button>
               )}
 
-              {activeWorkspace && isOwnerOrAdmin(activeRole ?? "") && (
+              {activeWorkspace && isOwner(activeWorkspace) && (
                 <button
                   onClick={() => {
                     onOpenSettings();

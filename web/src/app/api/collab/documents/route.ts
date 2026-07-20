@@ -1,98 +1,44 @@
 import { NextResponse } from "next/server";
-import { getDocuments, saveDocuments, saveState, getWorkspaces } from "../db";
-import crypto from "crypto";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
+import { PersistenceCommandService, persistenceRepository } from "@/server/persistence";
+import { requireAccountSession } from "@/server/auth/session";
+
+function text(value: unknown, maximum: number): string | null {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum ? value.trim() : null;
+}
 
 export async function GET(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    let session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const username = (session.user.name || "").toLowerCase();
-    const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get('workspaceId');
-
-    let documents = await getDocuments();
-    if (workspaceId) {
-      documents = documents.filter((doc: any) => doc.workspaceId === workspaceId);
-    }
-
-    // Scope to documents the requester can see: either a direct member of the
-    // document, or a member of the workspace the document belongs to.
-    const workspaces = await getWorkspaces();
-    const memberWorkspaceIds = new Set(
-      workspaces
-        .filter((ws: any) =>
-          (ws.members || []).some((m: any) => m.username?.toLowerCase() === username)
-        )
-        .map((ws: any) => ws.id)
-    );
-
-    documents = documents.filter((doc: any) => {
-      const isDocMember = (doc.members || []).some(
-        (m: any) => m.username?.toLowerCase() === username
-      );
-      return isDocMember || memberWorkspaceIds.has(doc.workspaceId);
-    });
-
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? undefined;
+    const documents = await (await persistenceRepository()).listDocuments(session.accountId, workspaceId);
+    // Workspace navigation never implies document visibility: repository query
+    // joins direct room membership only.
     return NextResponse.json({ success: true, documents });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to fetch documents" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to fetch documents" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    let session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { name, html, workspaceId, semanticArtifact, visualPlan } = await request.json();
-    if (!name || !html || !workspaceId) {
-      return NextResponse.json({ error: "Missing name, html or workspaceId" }, { status: 400 });
-    }
-
-    const documentId = `doc-${crypto.randomUUID()}`;
-    const newDoc = {
-      id: documentId,
-      name,
-      workspaceId,
-      createdAt: new Date().toISOString(),
-      members: [
-        { username: session.user.name || "", role: "owner" }
-      ]
-    };
-
-    const documents = await getDocuments();
-    documents.push(newDoc);
-    await saveDocuments(documents);
-
-    const initialState = {
-      versions: [
-        {
-          versionNumber: 1,
-          html: html,
-          status: "Draft",
-          timestamp: new Date().toISOString()
-        }
-      ],
-      activeVersionNum: 1,
-      comments: [],
-      // ROOM-005: new documents start with NO seeded reviewers — legacy demo
-      // docs keep their hard-coded seeds (INITIAL_STATE in ../route.ts is
-      // untouched); only freshly created documents get an empty verdict set.
-      verdicts: {},
-      ...(semanticArtifact ? { semanticArtifact } : {}),
-      ...(visualPlan ? { visualPlan } : {})
-    };
-
-    await saveState(initialState, documentId);
-
-    return NextResponse.json({ success: true, document: newDoc });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to create document" }, { status: 500 });
+    const body = await request.json();
+    const title = text(body.name ?? body.title, 300);
+    const html = text(body.html, 5_000_000);
+    const workspaceId = text(body.workspaceId, 200);
+    if (!title || !html || !workspaceId) return NextResponse.json({ error: "name, html and workspaceId are required" }, { status: 400 });
+    // Command service validates state shape/semantic artifact and confirms the
+    // workspace owner's authority before creating its direct owner membership.
+    const document = await new PersistenceCommandService(await persistenceRepository()).createDocument({
+      accountId: session.accountId, workspaceId, title, html,
+      ...(body.semanticArtifact ? { semanticArtifact: body.semanticArtifact } : {}),
+      ...(body.visualPlan ? { visualPlan: body.visualPlan } : {}),
+    });
+    return NextResponse.json({ success: true, document: { id: document.documentId, name: document.title, workspaceId: document.workspaceId, kind: document.kind, revision: document.revision } }, { status: 201 });
+  } catch (error: any) {
+    const status = error?.status === 403 ? 403 : error?.name === "CommandValidationError" ? 400 : 500;
+    return NextResponse.json({ error: status === 500 ? "Failed to create document" : error.message }, { status });
   }
 }

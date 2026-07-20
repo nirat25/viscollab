@@ -1,36 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getWorkspaces, createWorkspace } from "../db";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-export async function GET(req: NextRequest) {
-  let session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import { persistenceRepository, workspaceCatalogProjection } from "@/server/persistence";
+import { requireAccountSession } from "@/server/auth/session";
+
+export async function GET(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const repository = await persistenceRepository();
+    const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+    if (workspaceId) {
+      const workspace = (await repository.listWorkspaces(session.accountId)).find((item) => item.id === workspaceId);
+      if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+      return NextResponse.json({ ...workspaceCatalogProjection(session.accountId, workspace), members: await repository.listWorkspaceMembers(session.accountId, workspaceId) });
+    }
+    return NextResponse.json((await repository.listWorkspaces(session.accountId)).map((workspace) => workspaceCatalogProjection(session.accountId, workspace)));
+  } catch {
+    return NextResponse.json({ error: "Failed to fetch workspaces" }, { status: 500 });
   }
-
-  const workspaces = await getWorkspaces();
-  // Filter workspaces to only those the user is a member of
-  const userWorkspaces = workspaces.filter(ws => 
-    ws.members.some((m: any) => m.username.toLowerCase() === session!.user!.name!.toLowerCase())
-  );
-
-  return NextResponse.json(userWorkspaces);
 }
 
-export async function POST(req: NextRequest) {
-  let session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const body = await request.json();
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > 512) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    const workspace = await (await persistenceRepository()).createWorkspace({
+      accountId: session.accountId,
+      workspace: { id, name, ownerAccountId: session.accountId, createdAt: now, updatedAt: now },
+      ownerMembership: { workspaceId: id, accountId: session.accountId, role: "owner", createdAt: now },
+    });
+    return NextResponse.json(workspaceCatalogProjection(session.accountId, workspace), { status: 201 });
+  } catch {
+    return NextResponse.json({ error: "Failed to create workspace" }, { status: 500 });
   }
-
-  const body = await req.json();
-  const { name } = body;
-  if (!name) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
-
-  const id = "ws-" + Math.random().toString(36).substring(2, 9);
-  const newWorkspace = await createWorkspace(id, name, session!.user!.name!);
-
-  return NextResponse.json(newWorkspace);
 }

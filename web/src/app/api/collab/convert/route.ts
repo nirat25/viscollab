@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import { runPipeline } from "htmlcollab-app/pipeline";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/options";
-import { canEdit } from "htmlcollab-app/collab";
 import { marked } from "marked";
-import { checkAndIncrementLimit } from "../limits";
-import { testSessionFallback } from "../testAuth";
 import { runSemanticPipeline, mockExtract } from "htmlcollab-app/semantic";
 import { ingestRawHtml } from "htmlcollab-app/ingest";
+import { noStore, persistenceErrorResponse, persistenceRepository, requiredString, sessionAccountId } from "../phase9";
 import type { SemanticArtifact, SemanticPipelineOpts } from "htmlcollab-app/semantic";
 import type { TipTapDoc } from "htmlcollab-app/ingest";
 import type { VisualPlan } from "htmlcollab-app/visual";
@@ -35,25 +31,16 @@ async function attachSemanticPipeline(
 
 export async function POST(request: Request) {
   try {
-    let session = await getServerSession(authOptions);
-    if (!session) {
-      session = testSessionFallback();
-    }
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!canEdit((session.user.role || "viewer") as any)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (session.user.name) {
-      const limitCheck = await checkAndIncrementLimit(session.user.name, "conversion");
-      if (!limitCheck.allowed) {
-        return NextResponse.json(
-          { error: `You have reached your daily limit of ${limitCheck.limit} conversions.` },
-          { status: 429 }
-        );
-      }
+    const accountId = await sessionAccountId();
+    if (!accountId) return noStore({ error: "unauthorized" }, 401);
+    // Conversion has no document yet. It is deliberately scoped to the
+    // workspace owner, never a global session role. Query avoids consuming a
+    // multipart body before the file pipeline reads it.
+    const workspaceId = requiredString(new URL(request.url).searchParams.get("workspaceId"));
+    if (!workspaceId) return noStore({ error: "invalid_request" }, 400);
+    const workspaces = await (await persistenceRepository()).listWorkspaces(accountId);
+    if (!workspaces.some((workspace) => workspace.id === workspaceId && workspace.ownerAccountId === accountId)) {
+      return noStore({ error: "forbidden" }, 403);
     }
 
     const contentType = request.headers.get("content-type") || "";
@@ -64,7 +51,7 @@ export async function POST(request: Request) {
     let visualPlan: VisualPlan | undefined;
 
     // Check if running in mock/test environment
-    const isMock = process.env.PLAYWRIGHT_TEST === "true" || process.env.MOCK_AI === "true";
+    const isMock = process.env.MOCK_AI === "true";
     if (isMock) {
       let rawHtml = "";
       if (contentType.includes("multipart/form-data")) {
@@ -189,7 +176,6 @@ export async function POST(request: Request) {
       ...(visualPlan ? { visualPlan } : {})
     });
   } catch (e: any) {
-    console.error("Pipeline conversion error", e);
-    return NextResponse.json({ error: e.message || "Failed to convert document" }, { status: 500 });
+    return persistenceErrorResponse(e);
   }
 }

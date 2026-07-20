@@ -11,7 +11,6 @@ export default function AuthScreen() {
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  const [roleInput, setRoleInput] = useState<"owner" | "collaborator" | "commenter" | "viewer">("collaborator");
   const [authError, setAuthError] = useState("");
 
   // Auth handlers
@@ -43,7 +42,7 @@ export default function AuthScreen() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput, role: roleInput }),
+        body: JSON.stringify({ username: usernameInput, password: passwordInput }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -64,23 +63,6 @@ export default function AuthScreen() {
       }
     } catch (err: any) {
       setAuthError(err.message || "An error occurred during sign up");
-    }
-  };
-
-  const handleDemoLogin = async (username: string) => {
-    try {
-      const res = await signIn("credentials", {
-        username,
-        password: "password",
-        redirect: false
-      });
-      if (res?.error) {
-        setAuthError(res.error || `Failed to log in as ${username}`);
-      } else {
-        setAuthError("");
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "An error occurred during demo login");
     }
   };
 
@@ -223,24 +205,6 @@ export default function AuthScreen() {
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
                   />
-                </div>
-                <div>
-                  <label htmlFor="signup-role" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Role
-                  </label>
-                  <select
-                    id="signup-role"
-                    name="role"
-                    required
-                    className="appearance-none rounded-xl relative block w-full px-4 py-2.5 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs bg-white"
-                    value={roleInput}
-                    onChange={(e) => setRoleInput(e.target.value as any)}
-                  >
-                    <option value="owner">Owner</option>
-                    <option value="collaborator">Collaborator</option>
-                    <option value="commenter">Commenter</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
                 </div>
               </div>
 

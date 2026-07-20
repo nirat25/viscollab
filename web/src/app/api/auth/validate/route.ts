@@ -1,25 +1,9 @@
 import { NextResponse } from "next/server";
-import { getUsers } from "../../collab/db";
 
 export async function POST(request: Request) {
-  try {
-    const { token } = await request.json();
-    if (!token) {
-      return NextResponse.json({ error: "Missing token" }, { status: 400 });
-    }
-
-    const users = await getUsers();
-    const user = users.find((u: any) => u.token === token);
-
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Invalid token" }, { status: 401 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      user: { name: user.username, role: user.role },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed to validate token" }, { status: 500 });
-  }
+  // Token-based identity was retired in Phase 9. NextAuth owns the signed
+  // session cookie; this endpoint intentionally cannot validate bearer-like
+  // opaque values into an account.
+  await request.text();
+  return NextResponse.json({ error: "Token validation is retired; use the account session." }, { status: 410 });
 }

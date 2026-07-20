@@ -1,43 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getWorkspaces, saveWorkspaces } from "../../db";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../auth/[...nextauth]/options";
+import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { normalizeUsername } from "htmlcollab-app/persistence";
+import { persistenceRepository } from "@/server/persistence";
+import { requireAccountSession } from "@/server/auth/session";
 
-export async function POST(req: NextRequest) {
-  let session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const body = await request.json();
+    const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
+    const normalizedUsername = normalizeUsername(body.username);
+    if (!workspaceId || !normalizedUsername || (body.role !== undefined && body.role !== "member")) {
+      return NextResponse.json({ error: "workspaceId and invitee username are required" }, { status: 400 });
+    }
+    const now = new Date();
+    const invitation = await (await persistenceRepository()).createWorkspaceInvitation({
+      accountId: session.accountId, workspaceId,
+      invitation: { id: randomUUID(), workspaceId, normalizedUsername, role: "member", invitedByAccountId: session.accountId, createdAt: now.toISOString(), expiresAt: new Date(now.valueOf() + 7 * 24 * 60 * 60 * 1000).toISOString() },
+    });
+    return NextResponse.json({ success: true, invitation }, { status: 201 });
+  } catch (error: any) {
+    const status = error?.status === 403 ? 403 : /already|does not exist/.test(error?.message ?? "") ? 409 : 500;
+    return NextResponse.json({ error: status === 500 ? "Failed to add workspace member" : error.message }, { status });
   }
+}
 
-  const body = await req.json();
-  const { workspaceId, username, role } = body;
-  
-  if (!workspaceId || !username || !role) {
-    return NextResponse.json({ error: "workspaceId, username, and role are required" }, { status: 400 });
+export async function PUT(request: Request) {
+  const session = await requireAccountSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const body = await request.json();
+    if (typeof body.workspaceId !== "string" || typeof body.invitationId !== "string") return NextResponse.json({ error: "workspaceId and invitationId are required" }, { status: 400 });
+    await (await persistenceRepository()).acceptWorkspaceInvitation({ accountId: session.accountId, workspaceId: body.workspaceId, invitationId: body.invitationId });
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.status === 403 ? "Invitation is unavailable" : "Failed to accept workspace invitation" }, { status: error?.status === 403 ? 403 : 500 });
   }
-
-  const workspaces = await getWorkspaces();
-  const workspace = workspaces.find(w => w.id === workspaceId);
-
-  if (!workspace) {
-    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-  }
-
-  // Check if current user is an owner/admin of this workspace
-  const currentUserMember = workspace.members.find((m: any) => m.username.toLowerCase() === session!.user!.name!.toLowerCase());
-  if (!currentUserMember || !['owner', 'admin'].includes(currentUserMember.role)) {
-    return NextResponse.json({ error: "Only workspace owners can invite users to a workspace" }, { status: 403 });
-  }
-
-  // Check if user is already a member
-  const existingMember = workspace.members.find((m: any) => m.username.toLowerCase() === username.toLowerCase());
-  if (existingMember) {
-    existingMember.role = role;
-  } else {
-    workspace.members.push({ username, role });
-  }
-
-  await saveWorkspaces(workspaces);
-
-  return NextResponse.json({ success: true, workspace });
 }

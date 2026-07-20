@@ -9,14 +9,19 @@ import {
   type GroundedAgentAnswer,
 } from "htmlcollab-app/agent/client";
 import type { SemanticArtifact } from "htmlcollab-app/semantic";
+import type { DocumentStateV2 } from "htmlcollab-app/persistence";
 
 export interface ReviewAssistantProps {
   documentId: string;
   artifact: SemanticArtifact;
+  expectedRevision: number;
+  onState: (state: DocumentStateV2) => void;
+  onRevision?: (revision: number) => void;
+  onAccessLost?: () => void;
 }
 
 /** One-shot, grounded review request. Deliberately not a persistent chat UI. */
-export default function ReviewAssistant({ documentId, artifact }: ReviewAssistantProps) {
+export default function ReviewAssistant({ documentId, artifact, expectedRevision, onState, onRevision, onAccessLost }: ReviewAssistantProps) {
   const [preset, setPreset] = useState<AgentPreset>("founder");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<GroundedAgentAnswer | null>(null);
@@ -49,9 +54,12 @@ export default function ReviewAssistant({ documentId, artifact }: ReviewAssistan
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ documentId, question: trimmedQuestion, preset }),
+        body: JSON.stringify({ documentId, question: trimmedQuestion, preset, expectedRevision }),
       });
       const payload: unknown = await response.json();
+      if (response.status === 401 || response.status === 403) {
+        onAccessLost?.();
+      }
       if (!response.ok || !payload || typeof payload !== "object" || !("answer" in payload)) {
         const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
           ? payload.error
@@ -59,6 +67,12 @@ export default function ReviewAssistant({ documentId, artifact }: ReviewAssistan
         throw new Error(message);
       }
       setAnswer((payload as { answer: GroundedAgentAnswer }).answer);
+      const state = (payload as { state?: unknown }).state;
+      if (state && typeof state === "object" && (state as { schemaVersion?: unknown }).schemaVersion === 2) {
+        onState(state as DocumentStateV2);
+      }
+      const revision = (payload as { revision?: unknown }).revision;
+      if (typeof revision === "number" && Number.isInteger(revision) && revision >= 0) onRevision?.(revision);
     } catch (requestError) {
       if (requestError instanceof DOMException && requestError.name === "AbortError") return;
       setError(requestError instanceof Error ? requestError.message : "Unable to review this room right now.");

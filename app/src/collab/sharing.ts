@@ -1,121 +1,35 @@
-export type AccessRole = 'owner' | 'collaborator' | 'viewer' | 'commenter' | 'comment';
-
-export interface SharingCollabDoc {
-  id: string;
-  status?: 'Draft' | 'Live';
-  versionStatus?: 'Draft' | 'Live';
-}
-
-export interface ShareToken {
-  token: string;
-  docId: string;
-  role: AccessRole;
-  isRevoked: boolean;
-  expiresAt?: Date;
-}
-
-// In-memory registry for tracking share tokens and link revocation
-const tokenRegistry = new Map<string, ShareToken>();
-
 /**
- * Clears the registered tokens. Primarily used for resetting test states.
+ * Compatibility affordances for pre-Phase-9 screens.
+ *
+ * They are deliberately role-only UI helpers, never authorization. Anonymous
+ * share links/tokens were retired in Phase 9; routes must use
+ * `persistence/authorize` with direct membership instead.
  */
-export function clearTokens(): void {
-  tokenRegistry.clear();
+
+import { capabilitiesForRole } from "../persistence/access.js";
+import type { RoomRole } from "../persistence/types.js";
+
+export type AccessRole = RoomRole;
+
+/** @deprecated Use server-derived direct membership and `authorize` instead. */
+export interface SharingCollabDoc { id: string; }
+
+/** External/anonymous access is always denied. Internal UI affordances use role only. */
+export function canView(_doc: SharingCollabDoc, role: unknown, isExternal = false): boolean {
+  return !isExternal && capabilitiesForRole(role).includes("room.read");
 }
 
-/**
- * Registers a share token.
- */
-export function registerToken(token: ShareToken): void {
-  tokenRegistry.set(token.token, token);
+/** Compatibility UI helper, not authorization. */
+export function canComment(role: unknown): boolean {
+  return capabilitiesForRole(role).includes("comment.create");
 }
 
-/**
- * Revokes a share token immediately.
- */
-export function revokeToken(token: string): void {
-  const t = tokenRegistry.get(token);
-  if (t) {
-    t.isRevoked = true;
-  }
+/** Compatibility UI helper, not authorization. */
+export function canEdit(role: unknown): boolean {
+  return capabilitiesForRole(role).includes("room.edit");
 }
 
-/**
- * Check if a share token is valid (not revoked and not expired).
- */
-export function isTokenValid(token: string): boolean {
-  const t = tokenRegistry.get(token);
-  if (!t) return false;
-  if (t.isRevoked) return false;
-  if (t.expiresAt && t.expiresAt.getTime() <= Date.now()) return false;
-  return true;
-}
-
-/**
- * Validates a share token and returns it if valid, otherwise throws an error.
- */
-export function validateTokenAccess(token: string): ShareToken {
-  const t = tokenRegistry.get(token);
-  if (!t) {
-    throw new Error('Access denied: Share token not found');
-  }
-  if (t.isRevoked) {
-    throw new Error('Access denied: Share token has been revoked');
-  }
-  if (t.expiresAt && t.expiresAt.getTime() <= Date.now()) {
-    throw new Error('Access denied: Share token has expired');
-  }
-  return t;
-}
-
-/**
- * Guard to check if a user with a given role can view a document.
- * Draft versions are never shareable externally.
- */
-export function canView(doc: SharingCollabDoc, role: AccessRole, isExternal: boolean): boolean {
-  const status = doc.versionStatus || doc.status;
-  if (status === 'Draft' && isExternal) {
-    return false;
-  }
-  return ['owner', 'collaborator', 'viewer', 'commenter', 'comment'].includes(role);
-}
-
-/**
- * Guard to check if a user with a given role can comment on a document.
- * Viewers are blocked from commenting.
- */
-export function canComment(role: AccessRole): boolean {
-  if (role === 'viewer') {
-    return false;
-  }
-  return ['owner', 'collaborator', 'commenter', 'comment'].includes(role);
-}
-
-/**
- * Guard to check if a user with a given role can edit/regenerate a document.
- * Only owners and collaborators can edit.
- */
-export function canEdit(role: AccessRole): boolean {
-  return ['owner', 'collaborator'].includes(role);
-}
-
-/**
- * Phase-8 export is restricted to people who can edit the decision room.
- * A separate export capability, if needed, belongs to the Phase-9 permissions model.
- */
-export function canExportAgentData(role: AccessRole): boolean {
-  return canEdit(role);
-}
-
-/**
- * Guard to check if a user can generate a share link for a document.
- * External users are blocked from generating share links for Drafts.
- */
-export function canGenerateShareLink(doc: SharingCollabDoc, isExternal: boolean): boolean {
-  const status = doc.versionStatus || doc.status;
-  if (status === 'Draft' && isExternal) {
-    return false;
-  }
-  return !isExternal;
+/** Compatibility UI helper, not authorization. */
+export function canExportAgentData(role: unknown): boolean {
+  return capabilitiesForRole(role).includes("agent.export");
 }

@@ -14,6 +14,7 @@
     "./semantic": "./dist/semantic/index.js",
     "./agent": "./dist/agent/index.js",
     "./agent/client": "./dist/agent/client.js",
+    "./persistence": "./dist/persistence/index.js",
     "./visual": "./dist/visual/index.js",
     "./ingest": "./dist/ingest/index.js"
   },

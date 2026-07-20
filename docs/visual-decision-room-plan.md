@@ -258,6 +258,22 @@ only against that brief and its task/gate sequence.
   hover, presence, tab selection, time-on-page, or passive AgentBrief generation. E2E seeding is a
   direct, production-refusing script using real credentials and a disposable store.
 
+#### Phase 9 implementation status — 2026-07-20
+
+`PERS-001..010` and `E2E-001..004` are implemented and reviewed on branch
+`rebuild/decision-rooms` (`35c5805`, `f069b21`, `0fc65a5`, `fa8a9f6`, `00db069`). App contracts
+compile with 382/382 deterministic tests; web persistence tests are 32/32; the production build and
+the three real-auth Playwright scenarios pass. A disposable PostgreSQL migration rehearsal achieved
+2/2 zero-issue backfills, an idempotent second pass, 61/61 parity checks, an exercised table-read +
+dual-write canary, and 18/18 rollback checks while preserving legacy raw HTML and immutable review
+identity.
+
+This does **not** close Phase 9. The local PostgreSQL rehearsal did not provide hosted TLS. The §7
+exit gate still requires a hosted production-like configuration proving migrations, secret, TLS,
+and no JSON fallback, followed by the controlled account-required canary and recorded rollback-window
+evidence. Do not start Phase 10, remove the blob mirror, or clean up legacy data before that evidence
+and the owner's later retention decision.
+
 ### Phase 10: Lovable Launch Loop
 
 1. Replace generic conversion progress with:

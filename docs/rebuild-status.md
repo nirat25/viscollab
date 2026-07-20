@@ -1,6 +1,6 @@
 # Decision-Rooms Rebuild — Status & Handoff Checklist
 
-Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–8 ✅ (all gates PASSED) → Phase 9 architecture is BINDING and implementation is underway.**
+Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT push — pushing `main` deploys via Vercel; the owner also declined branch pushes) · This file is the **canonical, provider-agnostic resume point**: any agent/LLM session continuing the rebuild starts by reading this file, then the governing docs below. **Current state: Phases 0–8 ✅ (all gates PASSED) → Phase 9 implementation and local production-like rehearsal ✅; hosted TLS production configuration + controlled canary evidence remain before the Phase-9 exit gate can close. Do not start Phase 10.**
 
 ## Governing docs (read in this order)
 1. `docs/rebuild-architecture.md` — **BINDING** architecture brief (Phases 0–6). Type contracts are copied verbatim into code; §4 planner rules, §5 extraction contract, §7 projection/layout, §8 build order + review checklists, §12 pinned dependency versions.
@@ -16,6 +16,13 @@ Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT pus
 - Real-LLM validation at phase gates; deterministic mocks everywhere in CI.
 - Commit per reviewed task group on this branch. Never push.
 - The owner's 2026-07-19 instruction to resume the remaining phase cleared the post-Phase-7 UX checkpoint and authorized Phase 8. The owner cleared the Phase-9 architecture gate on **2026-07-20**; `rebuild-architecture-phase9.md` and the dated plan clarifications are now binding. Implement only the `PERS-001..010` sequence and its gates; no push.
+
+## Exact resume point (2026-07-20)
+
+- Phase-9 code, deterministic tests, real-auth E2E, idempotent backfill/parity, table-read canary, dual-write mirror, and rollback-read tooling are implemented and locally verified. Commits: `35c5805`, `f069b21`, `0fc65a5`, `fa8a9f6`, `00db069`.
+- **Only remaining Phase-9 exit work is operational:** use a hosted production-like Postgres environment with required TLS, valid `NEXTAUTH_SECRET`, the exact migration ledger, and no JSON fallback; take a backup marker, repeat backfill/parity, then run the controlled account-required canary from brief §7 gate item 5. Preserve the blob mirror throughout the rollback window.
+- The owner must choose/authorize that deployment environment and later retention decision. Until the hosted canary evidence is recorded here, **Phase 9 remains open and Phase 10 must not begin**.
+- Keep `.claude/settings.local.json` untouched/uncommitted. Never push this branch unless the owner explicitly reverses the no-push decision.
 
 ## State checklist
 
@@ -62,7 +69,12 @@ Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT pus
   - **App wave:** new public `htmlcollab-app/agent` module (`types`, deterministic brief + validator, grounded Ask + mock, export allowlist, eval rubric), browser-safe `agent/client`, provider `ask` role/env/fallbacks, export RBAC helper, hardened semantic validation, compatibility re-export. Independent review found and fixed unknown-field export leakage, malformed SourceRef acceptance, stored-plan replacement, and missing bounds tests.
   - **Web wave:** secured `POST /api/collab/ask` and `GET /api/collab/export`, direct document membership, strict request allowlist, ask quota, stable opaque/no-store failures, owner/collaborator export, compact one-shot Review assistant, canonical suggested questions, citation chips, export download, semantic “Review” header copy, keyboard tabs/valid ARIA, nested Source/visual scroll contract, and 375px control/tab refinements. Legacy documents keep the old Comments/DocumentSurface path.
 - ✅ **Phase 8 gate PASSED (2026-07-19)**: **380/380** app vitest offline; app typecheck/build; web tsc + production build; both new routes included in the Next route manifest; strict-body 400 and direct-membership 403 responses verified with `private, no-store` (export also `nosniff`); 375px root has no page overflow. **Real-LLM Ask gate PASSED** on the founder memo with `claude-haiku-4-5`: non-simulated answer, 8 canonical citations, strict citation validation `{valid:true}`. Independent final re-review: **PASS, no blockers**. Existing CSS Custom Highlight optimizer warnings remain unchanged.
-- 🟡 **Phase 9 — persistence, identities, RBAC, durable audit/version model: architecture underway (owner gate cleared 2026-07-20).** `docs/rebuild-architecture-phase9.md` is BINDING and `PERS-001..010` are queued in the plan. Start with identity/capability/repository contracts, then adapters/migrations, then backfill/parity/rollback and safe E2E; preserve legacy routing and do not introduce request-time DDL, anonymous access, or surveillance. E2E-001..004 remain unstarted.
+- 🟡 **Phase 9 — persistence, identities, RBAC, durable audit/version model: implementation/local rehearsal complete; hosted canary pending** (`35c5805`, `f069b21`, `0fc65a5`, `fa8a9f6`, `00db069`, 2026-07-20; GPT-5.6 Terra builders + independent review + orchestrator fixes):
+  - `PERS-001..010` implemented: immutable UUID accounts/sessions; direct-room capability matrix; `DocumentStateV2` + revision conflicts; repository/fake/atomic JSON/Postgres adapters; ordered checksummed migrations + startup refusal; command-only membership/comments/verdicts/versions; mutation-only audit/redacted agent runs; backfill/parity/dual-write/rollback; exact raw-HTML legacy routing; guarded real-auth E2E seed.
+  - Old blob/database route helpers, anonymous test-session fallback, and reset-style E2E path were removed. NextAuth exposes immutable `accountId`; all catalog/room/Ask/export/edit/regenerate/team routes now load authority server-side. Viewer/commenter/collaborator/owner controls and direct 401/403/revocation behavior are exercised through real scrypt login.
+  - **Deterministic/browser gate:** app typecheck/build + **382/382 vitest**; web **32/32 persistence tests**, TypeScript, production build; guarded seed refuses without explicit E2E mode; **3/3 Playwright** tests pass, covering import, semantic + legacy routing, anonymous 401, role 403s, immediate revocation, allowed/forbidden export, keyboard tabs, desktop capture, and 375px capture/no root overflow.
+  - **Disposable PostgreSQL rehearsal passed:** 2/2 legacy sources backfilled with zero issues; second apply migrated 0/skipped 2; parity **61/61**; rollback verification **18/18**. The table/dual-write canary exercised semantic and legacy reads, comments/replies/resolution/verdict, safe Ask audit, account/workspace/room creation, membership revocation, export, agent-run persistence, and blob rollback while retaining immutable authorship/version locks. Independent review findings from the first rehearsal were fixed before the clean run.
+  - **Exit gate still open:** the disposable local PostgreSQL server had no TLS. Brief §7 gate item 5 still requires hosted production-like configuration proving TLS + migrations + secret + no JSON fallback, followed by a controlled account-required canary and recorded rollback-window evidence. No destructive cleanup/blob-mirror removal; retention is a later owner decision.
 - ⬜ Phase 10 — closed-loop learning (`LOOP-00x`, likewise requires a bound brief after Phase 9).
 - ~~⬜ Web convert route wiring~~ ✅ DONE in Phase 6 (see above; BACK-012 decided: heuristic-only web mock mode).
 
@@ -76,9 +88,15 @@ Last updated: **2026-07-20** · Branch: **`rebuild/decision-rooms`** (do NOT pus
 
 ## Verify current state (run from repo root)
 ```bash
-cd app && npm run typecheck && npm run build && npx vitest run   # expect 380 passing
+cd app && npm run typecheck && npm run build && npx vitest run   # expect 382 passing
 npm run extract -- tests/fixtures/founder-strategy-memo.md --mock # offline pipeline smoke
 git log --oneline -8                                              # commits listed above
-cd ../web && npx tsc --noEmit && npm run build                    # Next production gate
+cd ../web && npm run test:persistence && npx tsc --noEmit && npm run build # 32 tests + Next gate
+```
+Guarded browser gate (use a fresh OS-temp directory; seed must refuse without these variables):
+```bash
+PHASE9_E2E_DIR="$(mktemp -d /private/tmp/viscollab-e2e.XXXXXX)"
+E2E_MODE=true E2E_OUTPUT_DIR="$PHASE9_E2E_DIR" COLLAB_JSON_DB_PATH="$PHASE9_E2E_DIR/state.json" npm run e2e:seed
+E2E_MODE=true E2E_OUTPUT_DIR="$PHASE9_E2E_DIR" COLLAB_JSON_DB_PATH="$PHASE9_E2E_DIR/state.json" npx playwright test
 ```
 Real-LLM spot check (needs `app/.env` keys): `npm run extract -- tests/fixtures/founder-strategy-memo.md`
